@@ -1,0 +1,56 @@
+{
+  "name": "dsh-rail",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Narrow icon rail for the DeepSeek Harness sidebar, with session-title hierarchy and the DeepSeek account balance above the sidebar footer.",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "deepseek",
+    "sidebar",
+    "rail",
+    "balance"
+  ],
+  "license": "MIT",
+  "author": "xiaoxiaolelang-ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xiaoxiaolelang-ai/dsh-rail.git"
+  },
+  "homepage": "https://github.com/xiaoxiaolelang-ai/dsh-rail#readme",
+  "bugs": {
+    "url": "https://github.com/xiaoxiaolelang-ai/dsh-rail/issues"
+  },
+  "engines": {
+    "dsh": ">=0.2.2-rc.1",
+    "node": ">=20"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
+    }
+  }
+}

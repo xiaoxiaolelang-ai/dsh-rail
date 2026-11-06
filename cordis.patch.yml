@@ -1,0 +1,5 @@
+# 窄轨 bundle patch：把本插件作为一行插入当前 profile。
+# name 必须是 loader 能从 profile 的 node_modules 解析到的模块 id，即本包自身的包名。
+- insert:
+    - id: dsh-rail
+      name: dsh-rail
