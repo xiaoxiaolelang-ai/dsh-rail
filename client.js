@@ -98,6 +98,28 @@ window.__ModuleLoader__.load({
 [data-dsh-rail-balance][data-loading='true'] {
   opacity: 0.6;
 }
+[data-dsh-rail-balance-dot] {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-label-tertiary, #8a8f98);
+  transition: background-color 0.12s ease;
+}
+[data-dsh-rail-balance][data-tone='warn'] [data-dsh-rail-balance-dot] {
+  background: var(--dsw-alias-state-warn-primary, #d68a1f);
+}
+[data-dsh-rail-balance][data-tone='low'] [data-dsh-rail-balance-dot] {
+  background: var(--dsw-alias-state-error-primary, #c0392b);
+}
+[data-dsh-rail-balance][data-tone='muted'] [data-dsh-rail-balance-dot] {
+  background: var(--dsw-alias-state-idle-primary, #b6b6b6);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-dsh-rail-balance-dot] {
+    transition: none;
+  }
+}
 [data-dsh-rail-balance-symbol] {
   flex: none;
   font-size: 11px;
@@ -125,7 +147,7 @@ window.__ModuleLoader__.load({
   color: var(--dsw-alias-label-tertiary);
 }
 [data-dsh-rail-balance-delta][data-tone='down'] {
-  color: var(--dsw-alias-state-warn-primary);
+  color: var(--dsw-alias-label-tertiary);
 }
 [data-dsh-rail-balance-delta][data-tone='up'] {
   color: var(--dsw-alias-state-success-primary);
@@ -137,7 +159,7 @@ window.__ModuleLoader__.load({
 }
 `
 
-    function railCss(n) {
+    function railCss(n, active) {
       const select = '.' + n.root
       const solid = (key) => '.' + n[key]
       return `
@@ -213,7 +235,20 @@ ${solid('footerActions')} {
 ${solid('footerActions')} [data-slot='sidebar.footer.action'] {
   display: contents !important;
 }
-`
+` + (active === null ? '' : `
+/* 当前面板：左侧 2px 圆头强调条，和选中会话同一种语言。
+   这个类名单独解析：宿主哪天改了它，只是这条强调条消失，窄栏布局不受影响。 */
+.${active}::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--dsw-alias-state-business-primary, var(--dsw-alias-brand-primary, #4d6bfe));
+}
+`)
     }
 
     /** 滚动条边距：让列表右缘正好贴住原生滚动条，而不是再多让一截内边距。 */
@@ -243,8 +278,181 @@ ${row}.${r.selected} .${r.title} {
 `
     }
 
+    /**
+     * 工作区 / 会话的结构层次。
+     *
+     * 原生的层次只靠 2px 行距和 4px 组距，扫一眼分不出"这是另一个工作区"。
+     * 这里只加三样东西，全部用主题令牌 + alpha：组间的发丝线、工作区标题的字重、
+     * 选中会话左侧的 2px 强调条。不做整块底色、不加边框盒子。
+     */
+    function structureCss(b, r, rows, guards) {
+      // 三档线条，靠「色相 + 粗细 + 浓度」一起区分，而不是只调透明度：
+      //   组间   —— 强调色的淡染（2px），读作"结构分界"
+      //   会话间 —— 中性发丝线（1px，很淡），读作"列表纹理"
+      //   竖线   —— 中性、比会话线再淡一档，读作"容器"
+      // 全部用 alpha 叠在透明上：浅色下是淡彩/淡灰，深色下是亮彩/亮灰，两头都成立。
+      // 没有引入新的色相：强调色本来就是"你在哪"的颜色，用低浓度染一下不会抢戏。
+      const strong = 'color-mix(in srgb, var(--dsw-alias-state-business-primary, var(--dsw-alias-brand-primary, #4d6bfe)) 26%, transparent)'
+      const session = 'color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 9%, transparent)'
+      const guide = 'color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 7%, transparent)'
+      // 拖拽指示器占着同一对伪元素。宿主的类名解析得到就加 :not 守卫；
+      // 解析不到就退化成"不加守卫"——宁可拖拽时短暂重影，也不整层结构消失。
+      const groupGuard = guards.group
+      const rowBeforeGuard = guards.rowBefore
+      const rowAfterGuard = guards.rowAfter
+      return `
+/* —— 工作区之间：圆头隔离带，只画在"第二个及以后"的组顶端 —— */
+.${b.groupSection} {
+  padding-top: 8px;
+}
+.${b.groupSection} + .${b.groupSection} {
+  margin-top: 4px;
+}
+.${b.groupSection} + .${b.groupSection}${groupGuard}::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 0;
+  height: 1px;
+  border-radius: 999px;
+  background: ${strong};
+  pointer-events: none;
+}
+/* —— 从工作区那一行下面拉一条圆头竖线，把它的会话括起来 ——
+   起点由 JS 实测后写成 --dsh-rail-guide-top（组上内边距 + 工作区行高），
+   CSS 这边不做任何算术：宿主改行高、改内边距、改字号，竖线都自己跟上。
+   刻意不给兜底值：量到之前 top 解析成 auto、竖线高度归零也就是暂时不显示，
+   也好过留一个写死的数字在宿主改版后默默错位。 */
+.${b.groupSection}${groupGuard}::before {
+  content: '';
+  position: absolute;
+  left: calc(16px + var(--dsh-workspace-indent, 0px));
+  top: var(--dsh-rail-guide-top);
+  bottom: 4px;
+  width: 2px;
+  border-radius: 999px;
+  background: ${guide};
+  pointer-events: none;
+}
+/* —— 工作区那一行本身 ——（不做吸顶：sticky 依赖祖先没有 overflow 裁剪，
+   而宿主的行容器不受我们控制；不做就不会有"有时吸、有时不吸"的不确定） */
+.${r.projectRow} {
+  position: relative;
+  font-weight: 500;
+}
+.${r.projectRow} .${r.slot} {
+  color: var(--dsw-alias-label-secondary, #6b6f76);
+}
+/* —— 工作区行末尾的会话数：数字由 JS 数出来写在 data 属性上，纯展示 —— */
+.${r.projectRow}[data-dsh-rail-count]::after {
+  content: attr(data-dsh-rail-count);
+  flex: none;
+  margin-inline-start: auto;
+  padding-inline: 4px;
+  color: var(--dsw-alias-label-tertiary, #8a8f98);
+  font-size: 11px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+/* 悬停时让位给行操作按钮，避免右边挤成一排。 */
+.${r.projectRow}:hover[data-dsh-rail-count]::after {
+  display: none;
+}
+/* —— 组内会话之间：1px 圆头发丝线，落在行距里 —— */
+/* 组内才加间距；扁平视图保持原生 2px，别把它撑松。 */
+.${b.groupSection} > * + * {
+  margin-top: 4px;
+}
+.${rows.sessionRow} {
+  position: relative;
+}
+.${rows.sessionRow}${rowAfterGuard}::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 8px;
+  top: -3px;
+  height: 1px;
+  border-radius: 1px;
+  background: ${session};
+  pointer-events: none;
+}
+/* —— 键盘焦点：未选中的行获得焦点时露出同款强调条 —— */
+.${rows.sessionRow}:not(.${rows.selected}):focus-within${rowBeforeGuard}::before,
+.${r.projectRow}:focus-within${rowBeforeGuard}::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary, #4d6bfe));
+}
+/* 选中会话：左侧 2px 圆头强调条（拖拽指示器占 ::before，这里让开） */
+.${rows.sessionRow}.${rows.selected}${rowBeforeGuard}::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--dsw-alias-state-business-primary, var(--dsw-alias-brand-primary, #4d6bfe));
+}
+`
+    }
+
+    /**
+     * 会话数的缓存。
+     *
+     * 折叠起来的工作区，宿主不会渲染它的会话行——DOM 里根本没有可数的东西。
+     * 所以只能记住"上次展开时数到的值"：展开时更新并落盘，折叠时用缓存补上。
+     * 代价是折叠状态下显示的是"上次展开时的数字"，一个工作区在别处增删会话后
+     * 要等它下次展开才会纠正。这是在不读宿主内部状态的前提下能做到的最好程度。
+     */
+    const countCache = { values: new Map(), loaded: false, dirty: false }
+    const COUNT_STORE = 'dsh-rail:session-counts:v2'
+
+    function loadCountCache() {
+      if (countCache.loaded) return
+      countCache.loaded = true
+      try {
+        const raw = window.localStorage.getItem(COUNT_STORE)
+        const parsed = raw === null ? null : JSON.parse(raw)
+        if (parsed !== null && typeof parsed === 'object') {
+          for (const [key, value] of Object.entries(parsed)) {
+            const count = Number(value)
+            if (Number.isFinite(count) && count > 0) countCache.values.set(key, count)
+          }
+        }
+      } catch {
+        // 读不到就当没有缓存
+      }
+    }
+
+    function persistCountCache() {
+      if (!countCache.dirty) return
+      countCache.dirty = false
+      try {
+        const flat = {}
+        for (const [key, value] of countCache.values) flat[key] = value
+        window.localStorage.setItem(COUNT_STORE, JSON.stringify(flat))
+      } catch {
+        // 写不进去就只在内存里用
+      }
+    }
+
+    /** 行身份：宿主给了 data-row-key（workspace:<id>）就用它，否则退回标题文字。 */
+    function rowIdentity(row) {
+      const explicit = row.getAttribute('data-row-key')
+      if (explicit !== null && explicit !== '') return explicit
+      return 'title:' + String(row.textContent ?? '').trim().slice(0, 120)
+    }
+
     /** 运行时解析出来的原生类名；图标栏的 title 装饰效果也要用。 */
-    const resolved = { root: null, panelList: null, panelRow: null }
+    const resolved = { root: null, panelList: null, panelRow: null, projectRow: null, groupSection: null, sessionRow: null }
 
     function currencySymbol(currency) {
       return currency === 'USD' ? '$' : '¥'
@@ -275,10 +483,8 @@ ${row}.${r.selected} .${r.title} {
 
     function BalanceChip() {
       const [snapshot, setSnapshot] = React.useState(null)
-      const [delta, setDelta] = React.useState(null)
       const [pending, setPending] = React.useState(true)
       const [failure, setFailure] = React.useState(null)
-      const settled = React.useRef(null)
 
       const load = React.useCallback(async (force) => {
         setPending(true)
@@ -290,15 +496,6 @@ ${row}.${r.selected} .${r.title} {
           })
           if (!response.ok) throw new Error('HTTP ' + response.status)
           const next = await response.json()
-          const nextTotal = next?.state === 'ready' ? Number.parseFloat(String(next.total)) : null
-          const previous = settled.current
-          if (nextTotal !== null && previous !== null && Number.isFinite(previous)) {
-            const change = nextTotal - previous
-            setDelta(Math.abs(change) < 0.005 ? null : change)
-          } else {
-            setDelta(null)
-          }
-          settled.current = nextTotal
           setSnapshot(next)
           setFailure(null)
         } catch (error) {
@@ -360,11 +557,15 @@ ${row}.${r.selected} .${r.title} {
       /* 屏幕阅读器不需要那句“点击刷新”，换成纯数值说明。 */
       const accessible = label.split('\n')[0]
 
-      const deltaTone = delta === null ? 'flat' : delta > 0 ? 'up' : 'down'
-      const deltaText =
-        delta === null
-          ? null
-          : (delta > 0 ? '+' : '−') + Math.abs(delta).toFixed(2)
+      /* 右侧那个数字 = 今日净变化（host 用当天第一次读数当基准算的）。
+         正数表示今天花掉，负数表示今天充了值或进了赠金；看不出变化就不显示。 */
+      const spent = ready ? Number.parseFloat(String(snapshot.spentToday ?? '')) : Number.NaN
+      const spentVisible = Number.isFinite(spent) && Math.abs(spent) >= 0.005
+      const spentText = spentVisible ? (spent > 0 ? '↓' : '↑') + Math.abs(spent).toFixed(2) : null
+      const spentTone = spentVisible ? (spent > 0 ? 'down' : 'up') : 'flat'
+      if (ready && Number.isFinite(spent)) {
+        label = label + '\n' + t('balance.today') + ' ' + (spent > 0 ? '-' : '+') + Math.abs(spent).toFixed(2)
+      }
 
       return h(
         'button',
@@ -377,14 +578,15 @@ ${row}.${r.selected} .${r.title} {
           'aria-label': accessible,
           onClick: () => void load(true),
         },
+        h('span', { 'data-dsh-rail-balance-dot': '' }),
         h('span', { 'data-dsh-rail-balance-symbol': '' }, symbol),
         h('span', { 'data-dsh-rail-balance-amount': '' }, text),
-        deltaText === null
+        spentText === null
           ? null
           : h(
               'span',
-              { 'data-dsh-rail-balance-delta': '', 'data-tone': deltaTone },
-              deltaText,
+              { 'data-dsh-rail-balance-delta': '', 'data-tone': spentTone },
+              spentText,
             ),
       )
     }
@@ -398,6 +600,7 @@ ${row}.${r.selected} .${r.title} {
       'balance.toppedUp': '充值',
       'balance.granted': '赠金',
       'balance.hint': '点击立即刷新',
+      'balance.today': '今日',
     }
 
     const en = {
@@ -409,6 +612,7 @@ ${row}.${r.selected} .${r.title} {
       'balance.toppedUp': 'Topped up',
       'balance.granted': 'Granted',
       'balance.hint': 'Click to refresh',
+      'balance.today': 'Today',
     }
 
     return {
@@ -438,14 +642,38 @@ ${row}.${r.selected} .${r.title} {
             const sidebar = resolveNames(SIDEBAR_SHEET, SIDEBAR_KEYS)
             const browser = resolveNames(BROWSER_SHEET, ['root'])
             const rows = resolveNames(ROWS_SHEET, ['sessionRow', 'title', 'selected'])
+            // 结构层次用到的类名单独解析：解析不到就只跳过这几条规则，
+            // 不能让整个侧栏皮肤跟着失效。
+            const railActive = resolveNames(SIDEBAR_SHEET, ['panelActive'])
+            const browserStruct = resolveNames(BROWSER_SHEET, ['groupSection', 'flatList'])
+            const rowsStruct = resolveNames(ROWS_SHEET, ['projectRow', 'slot'])
+            // 拖拽指示器的类名是"可选"的：有就加 :not 守卫，没有就不加守卫。
+            const browserDrop = resolveNames(BROWSER_SHEET, ['workspaceDropBefore', 'workspaceDropAfter'])
+            const rowsDrop = resolveNames(ROWS_SHEET, ['dropBefore', 'dropAfter'])
             const parts = [BASE_CSS]
             if (browser !== null) parts.push(insetCss(browser.root))
             if (rows !== null) parts.push(hierarchyCss(rows))
+            if (browserStruct !== null && rowsStruct !== null && rows !== null) {
+              parts.push(structureCss(browserStruct, rowsStruct, rows, {
+                group: browserDrop === null
+                  ? ''
+                  : ':not(.' + browserDrop.workspaceDropBefore + '):not(.' + browserDrop.workspaceDropAfter + ')',
+                rowBefore: rowsDrop === null ? '' : ':not(.' + rowsDrop.dropBefore + ')',
+                rowAfter: rowsDrop === null ? '' : ':not(.' + rowsDrop.dropAfter + ')',
+              }))
+            }
             if (sidebar !== null) {
-              parts.push(railCss(sidebar))
+              parts.push(railCss(sidebar, railActive === null ? null : railActive.panelActive))
               resolved.root = sidebar.root
               resolved.panelList = sidebar.panelList
               resolved.panelRow = sidebar.panelRow
+            }
+            if (rowsStruct !== null) {
+              resolved.projectRow = rowsStruct.projectRow
+            }
+            resolved.sessionRow = rows.sessionRow
+            if (browserStruct !== null) {
+              resolved.groupSection = browserStruct.groupSection
             }
             tag.textContent = parts.join('\n')
             return sidebar !== null && browser !== null && rows !== null
@@ -474,6 +702,177 @@ ${row}.${r.selected} .${r.title} {
             tag.remove()
           }
         }, 'dsh-rail: styles')
+
+        /**
+         * 实测一次竖线起点：组的上内边距 + 工作区那一行的实际高度。
+         *
+         * 为什么不留常量：行高和内边距都由宿主样式决定，宿主换字号、换内边距、
+         * 甚至改行高，写死的数字就会偏几像素——而这类问题不会报错，只会一直难看。
+         * 这里把两个值都量出来、合并成一个 --dsh-rail-guide-top 交给 CSS，
+         * CSS 里不再做任何算术。量到之前每 800ms 试一次，量到就停；
+         * 窗口尺寸变化时重量一次。
+         */
+        ctx.effect(() => {
+          let timer = 0
+          const measure = () => {
+            if (resolved.root === null || resolved.projectRow === null || resolved.groupSection === null) return false
+            const root = document.querySelector('.' + resolved.root)
+            if (root === null) return false
+            const group = root.querySelector('.' + resolved.groupSection)
+            const row = root.querySelector('.' + resolved.projectRow)
+            if (group === null || row === null) return false
+            const rowHeight = row.getBoundingClientRect().height
+            if (!(rowHeight > 0)) return false
+            let padTop = 0
+            try {
+              padTop = Number.parseFloat(window.getComputedStyle(group).paddingTop) || 0
+            } catch {
+              padTop = 0
+            }
+            const guideTop = Math.round(padTop + rowHeight) + 'px'
+            root.style.setProperty('--dsh-rail-guide-top', guideTop)
+            // 同一份值也写到 :root：侧栏根节点若被重建，行内的自定义属性会丢，:root 不会。
+            try {
+              const html = document.documentElement
+              if (html !== null && html !== undefined && html.style !== undefined && typeof html.style.setProperty === 'function') {
+                html.style.setProperty('--dsh-rail-guide-top', guideTop)
+              }
+            } catch {
+              // 写不了就只靠行内那份
+            }
+            return true
+          }
+          if (!measure()) {
+            timer = window.setInterval(() => {
+              if (measure() && timer !== 0) {
+                window.clearInterval(timer)
+                timer = 0
+              }
+            }, 800)
+          }
+          const onResize = () => { measure() }
+          window.addEventListener('resize', onResize)
+          return () => {
+            if (timer !== 0) window.clearInterval(timer)
+            window.removeEventListener('resize', onResize)
+          }
+        }, 'dsh-rail: head measurement')
+
+        /**
+         * 给每个工作区行标上"它下面有几个会话"。
+         *
+         * 数字写在行自己的 data 属性上，样式用 content: attr() 渲染——不插 DOM 节点，
+         * 卸载时把属性删掉即可还原。只数直接子节点里的会话行：折叠起来的工作区
+         * 本来就没有子行，此时不显示数字，而不是显示 0。
+         */
+        ctx.effect(() => {
+          let timer = 0
+          let frame = 0
+          let frameIsTimeout = false
+          let observer = null
+          let disposed = false
+          const paintCounts = () => {
+            frame = 0
+            if (disposed) return false
+            if (resolved.root === null || resolved.groupSection === null || resolved.projectRow === null || resolved.sessionRow === null) return false
+            const root = document.querySelector('.' + resolved.root)
+            if (root === null) return false
+            if (root.isConnected === false) {
+              // 侧栏根节点被换掉了：旧 observer 还盯着已经卸载的节点，重挂一次。
+              if (observer !== null) {
+                observer.disconnect()
+                observer = null
+              }
+              window.setTimeout(() => {
+                if (!disposed && observer === null) attach()
+              }, 0)
+              return true
+            }
+            // 不假设"会话行是工作区行的子节点"，也不假设"组里有会话子节点"——
+            // 宿主的树可能是 [组(只有表头), 会话...] 这种兄弟结构。
+            // 按文档顺序走一遍：遇到工作区行就开一个新桶，之后见到的会话都算给它。
+            // 嵌套组里的会话会自然归到更靠后的那个工作区行上。
+            const rowsAll = root.querySelectorAll('.' + resolved.projectRow + ',.' + resolved.sessionRow)
+            let current = null
+            const counts = new Map()
+            for (const node of rowsAll) {
+              if (node.classList !== undefined && node.classList.contains(resolved.projectRow)) {
+                current = node
+                counts.set(node, 0)
+                continue
+              }
+              if (current === null) continue
+              counts.set(current, counts.get(current) + 1)
+            }
+            loadCountCache()
+            countCache.dirty = false
+            for (const [row, count] of counts) {
+              const key = rowIdentity(row)
+              if (count > 0) {
+                row.setAttribute('data-dsh-rail-count', String(count))
+                if (countCache.values.get(key) !== count) {
+                  countCache.values.set(key, count)
+                  countCache.dirty = true
+                }
+                continue
+              }
+              // 没数到东西：折叠状态下才允许用缓存补，展开却为空就是真空
+              const collapsed = row.getAttribute('aria-expanded') === 'false'
+              const cached = countCache.values.get(key)
+              if (collapsed && Number.isFinite(cached) && cached > 0) {
+                row.setAttribute('data-dsh-rail-count', String(cached))
+              } else {
+                row.removeAttribute('data-dsh-rail-count')
+              }
+            }
+            persistCountCache()
+            return true
+          }
+          const schedule = () => {
+            if (frame !== 0 || disposed) return
+            if (window.requestAnimationFrame !== undefined) {
+              frame = window.requestAnimationFrame(paintCounts)
+              frameIsTimeout = false
+            } else {
+              frame = window.setTimeout(paintCounts, 16)
+              frameIsTimeout = true
+            }
+          }
+          const attach = () => {
+            const root = resolved.root === null ? null : document.querySelector('.' + resolved.root)
+            if (root === null) return false
+            paintCounts()
+            observer = new MutationObserver(schedule)
+            observer.observe(root, { childList: true, subtree: true })
+            return true
+          }
+          if (!attach()) {
+            timer = window.setInterval(() => {
+              if (attach() && timer !== 0) {
+                window.clearInterval(timer)
+                timer = 0
+              }
+            }, 800)
+          }
+          return () => {
+            disposed = true
+            if (timer !== 0) window.clearInterval(timer)
+            if (frame !== 0) {
+              if (frameIsTimeout) window.clearTimeout(frame)
+              else if (window.cancelAnimationFrame !== undefined) window.cancelAnimationFrame(frame)
+            }
+            if (observer !== null) observer.disconnect()
+            // 还原：把自己写的属性删干净
+            const rootName = resolved.root
+            const rowName = resolved.projectRow
+            if (rootName !== null && rowName !== null) {
+              const root = document.querySelector('.' + rootName)
+              if (root !== null) {
+                for (const row of root.querySelectorAll('.' + rowName)) row.removeAttribute('data-dsh-rail-count')
+              }
+            }
+          }
+        }, 'dsh-rail: session counts')
 
         /**
          * 图标栏把文字收起来之后，宿主原本那个 Tooltip 是 `disabled: wide` 的，

@@ -10,15 +10,122 @@
  * 两条都拿不到时如实回报状态，不编造数字。
  */
 
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+
 const BALANCE_PATH = '/api/dsh-rail/balance'
 const REFRESH_PATH = '/api/dsh-rail/balance/refresh'
 /** 余额变化很慢；30 秒内复用上一次结果，避免连点刷新把上游打爆。 */
 const CACHE_MS = 30_000
 const API_KEY_REF = 'DEEPSEEK_API_KEY'
 const API_URL = 'https://api.deepseek.com/user/balance'
-const VERSION = '0.1.0'
+const VERSION = '0.2.0'
 
 export const inject = ['connection']
+
+/**
+ * 当天余额的基准值：当天第一次读数即为"今天开始时的余额"。
+ * 正数差 = 今天花掉的钱；负数 = 今天有充值或赠金。
+ * 基准会落到 DSH_HOME/dsh-rail/day-spend.json，所以重启当天仍然是同一个基准；
+ * 跨天自动换新（日期键不同就重取）。
+ */
+const dayState = { key: '', first: null }
+
+/** 基准落在 DSH_HOME 下的插件私有目录里：DSH 重启后"今日花费"仍然成立。 */
+function stateFile() {
+  const home = process.env.DSH_HOME === undefined || process.env.DSH_HOME === '' ? join(homedir(), '.dsh') : process.env.DSH_HOME
+  return join(home, 'dsh-rail', 'day-spend.json')
+}
+
+function readPersisted() {
+  try {
+    const saved = JSON.parse(readFileSync(stateFile(), 'utf8'))
+    if (saved !== null && typeof saved === 'object' && typeof saved.key === 'string' && Number.isFinite(Number(saved.first))) {
+      return { key: saved.key, first: Number(saved.first) }
+    }
+  } catch {
+    // 没写过、读不动、格式不对 —— 都当作"没有历史基准"
+  }
+  return null
+}
+
+function persistState(state) {
+  try {
+    mkdirSync(dirname(stateFile()), { recursive: true })
+    writeFileSync(stateFile(), JSON.stringify(state), 'utf8')
+  } catch {
+    // 写不进去就只在内存里算，功能降级但不出错
+  }
+}
+
+function localDayKey(now) {
+  return now.getFullYear() + '-' + (now.getMonth() + 1) + '-' + now.getDate()
+}
+
+/** 用量账本的日期键是补零的 ISO 形式（2026-11-07），和上面那个不补零的不是一套。 */
+function ledgerDayKey(now) {
+  const pad = (value) => String(value).padStart(2, '0')
+  return now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate())
+}
+
+function ledgerFile() {
+  const home = process.env.DSH_HOME === undefined || process.env.DSH_HOME === '' ? join(homedir(), '.dsh') : process.env.DSH_HOME
+  return join(home, 'dsh-usage', 'usage-ledger.json')
+}
+
+/**
+ * 今日实际花费，来自用量账本（DSH_HOME/dsh-usage/usage-ledger.json：
+ * days[YYYY-MM-DD][provider][model].cost）。有账本就以账本为准——它不受
+ * 进程重启影响，也不会因为"今天还没花到一分钱"而显示不出来。
+ * 账本不存在或格式变了就返回 null，交给余额差值那条路兜底。
+ */
+function todayCostFromLedger() {
+  try {
+    const ledger = JSON.parse(readFileSync(ledgerFile(), 'utf8'))
+    const day = ledger === null || typeof ledger !== 'object' ? undefined : ledger.days?.[ledgerDayKey(new Date())]
+    if (day === undefined || day === null || typeof day !== 'object') return null
+    let sum = 0
+    let any = false
+    for (const provider of Object.values(day)) {
+      if (provider === null || typeof provider !== 'object') continue
+      for (const model of Object.values(provider)) {
+        const cost = Number(model?.cost)
+        if (Number.isFinite(cost)) {
+          sum += cost
+          any = true
+        }
+      }
+    }
+    return any ? sum : null
+  } catch {
+    return null
+  }
+}
+
+/** 给一份 ready 结果补上"今日净变化"。算不出来就不写这两个字段，前端自然不显示。 */
+function stampDaySpend(value) {
+  const total = Number.parseFloat(String(value.total))
+  if (!Number.isFinite(total)) return
+  const key = localDayKey(new Date())
+  if (dayState.key !== key) {
+    const saved = readPersisted()
+    dayState.key = key
+    dayState.first = saved !== null && saved.key === key ? saved.first : total
+    persistState({ key: dayState.key, first: dayState.first })
+  }
+  // 账本优先：它记的是真实花费，跨重启、跨"刚装插件"都成立。
+  const ledgerCost = todayCostFromLedger()
+  if (ledgerCost !== null) {
+    value.spentToday = ledgerCost.toFixed(2)
+    value.spentSource = 'ledger'
+    return
+  }
+  if (!Number.isFinite(dayState.first)) return
+  value.dayStart = dayState.first.toFixed(2)
+  value.spentToday = (dayState.first - total).toFixed(2)
+  value.spentSource = 'balance'
+}
 
 /** 缓存与并发去重都挂在模块作用域：一个 profile 只有一份插件实例。 */
 let cachedValue = null
@@ -107,8 +214,13 @@ async function fromApiKey(ctx) {
   }
   if (key === '') return { state: 'signed-out' }
 
+  // 没有超时的 fetch 一旦挂住，inflight 就永远不清空，余额条会一直停在"读取中"。
+  const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(10_000)
+    : undefined
   const response = await fetch(API_URL, {
     headers: { authorization: `Bearer ${key}`, accept: 'application/json' },
+    ...(signal === undefined ? {} : { signal }),
   })
   if (!response.ok) return { state: 'error', message: `余额接口返回 ${response.status}` }
 
@@ -156,6 +268,7 @@ async function snapshot(ctx, force) {
     inflight = readBalance(ctx)
       .then((value) => {
         if (value.state === 'ready') {
+          stampDaySpend(value)
           cachedValue = value
           cachedAt = Date.now()
         }
@@ -201,3 +314,5 @@ export function apply(ctx) {
     'dsh-rail: balance refresh route',
   )
 }
+
+export { stampDaySpend }
