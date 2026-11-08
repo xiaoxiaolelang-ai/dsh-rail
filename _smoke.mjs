@@ -113,6 +113,7 @@ const checks = [
   ['state-business-primary', 'selected session accent'],
   ['.wtg9ga_panelActive::before', 'rail active bar'],
   ['[data-dsh-rail-balance-dot]', 'balance status dot'],
+  ['[data-dsh-rail-ungrouped]', 'ungrouped bucket hidden'],
   ['.wnFoaW_projectRow[data-dsh-rail-count]::after', 'session count badge'],
   ['content: attr(data-dsh-rail-count)', 'count rendered from attribute'],
   ["[data-dsh-rail-balance-delta][data-tone='down']", 'spend delta styled'],

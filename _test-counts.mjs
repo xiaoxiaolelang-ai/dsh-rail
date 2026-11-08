@@ -39,7 +39,8 @@ class El {
     const set = new Set(String(this.className).split(' ').filter(Boolean))
     return { contains: (name) => set.has(name) }
   }
-  append(...kids) { for (const k of kids) this.children.push(k); return this }
+  append(...kids) { for (const k of kids) { k.parent = this; this.children.push(k) } return this }
+  get parentElement() { return this.parent ?? null }
   setAttribute(k, v) { this.attrs[k] = String(v) }
   removeAttribute(k) { delete this.attrs[k] }
   getAttribute(k) { return this.attrs[k] ?? null }
@@ -68,6 +69,15 @@ function mount(shape) {
     root.append(outer)
     return { root, expect: [2, 1] }
   }
+  if (shape === 'ungrouped') {
+    // 未分组：宿主给它的 key 是空串，所以行上是 "workspace:"
+    const group = new El('GAkraW_groupSection')
+    const row = new El('wnFoaW_projectRow')
+    row.setAttribute('data-row-key', 'workspace:')
+    group.append(row, new El('wnFoaW_sessionRow'), new El('wnFoaW_sessionRow'))
+    root.append(group)
+    return { root, expect: [2], ungrouped: group }
+  }
   if (shape === 'collapsed' || shape === 'service') {
     // 折叠：组里只有表头，aria-expanded=false，一个会话行都没渲染
     const group = new El('GAkraW_groupSection')
@@ -92,7 +102,7 @@ function mount(shape) {
 const React = { createElement: () => null, useState: () => [null, () => {}], useEffect: () => {}, useRef: () => ({ current: null }), useCallback: (fn) => fn }
 globalThis.MutationObserver = class { observe() {} disconnect() {} }
 
-for (const shape of ['children', 'siblings', 'collapsed', 'service']) {
+for (const shape of ['children', 'siblings', 'collapsed', 'service', 'ungrouped']) {
   const store = makeStore(shape === 'collapsed'
     ? { 'dsh-rail:session-counts:v2': JSON.stringify({ 'workspace:collapsed': 5 }) }
     : shape === 'service'
@@ -142,6 +152,11 @@ for (const shape of ['children', 'siblings', 'collapsed', 'service']) {
   const rows = root.querySelectorAll('.wnFoaW_projectRow')
   const got = rows.map((r) => Number(r.getAttribute('data-dsh-rail-count')))
   assert.deepEqual(got, expect, `shape ${shape}: expected ${expect} got ${got}`)
+  if (shape === 'ungrouped') {
+    const group = root.querySelectorAll('.GAkraW_groupSection')[0]
+    assert.equal(group.getAttribute('data-dsh-rail-ungrouped'), '', '未分组的组必须被标出来（CSS 据此隐藏）')
+    console.log(`OK  ${shape} 结构：组被标为 data-dsh-rail-ungrouped`)
+  }
   console.log(`OK  ${shape} 结构：计数 = ${got.join(', ')}`)
 }
 
