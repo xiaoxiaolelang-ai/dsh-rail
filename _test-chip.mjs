@@ -115,6 +115,13 @@ const readyPlain = new Map([[0, {
 const plain = render(readyPlain)
 assert.ok(String(plain.props.title).includes('点击立即刷新'), 'without a url the title must fall back to refresh')
 
+// 5) 其余状态分支也要能渲染：未登录 / 查询失败（这些分支不会被上面两条覆盖）
+const signedOut = render(new Map([[0, { state: 'signed-out' }]]))
+assert.ok(String(signedOut.props.title).includes('API Key'), 'signed-out branch must render the sign-in hint')
+const errored = render(new Map([[0, { state: 'error', message: '余额接口返回 502' }]]))
+assert.ok(String(errored.props.title).includes('502'), 'error branch must surface the reason')
+console.log('OK  未登录 / 失败分支都能渲染')
+
 console.log('OK  初始渲染不抛错（TDZ 回归）')
 console.log('OK  有地址：标题给"去充值"，点击打开页面')
 console.log('OK  Shift + 点击：不打开页面')
