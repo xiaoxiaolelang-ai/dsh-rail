@@ -301,12 +301,6 @@ ${row}.${r.selected} .${r.title} {
       const rowBeforeGuard = guards.rowBefore
       const rowAfterGuard = guards.rowAfter
       return `
-/* —— 未分组：宿主不给它 workspaceId（data-row-key 是 "workspace:"），
-     里面全是没有归属的会话（大多是子代理的执行痕迹）。
-     整组隐藏，属性由计数流程按行标出来，这里只负责不显示。 —— */
-[data-dsh-rail-ungrouped] {
-  display: none !important;
-}
 /* —— 工作区之间：圆头隔离带，只画在"第二个及以后"的组顶端 —— */
 .${b.groupSection} {
   padding-top: 8px;
@@ -812,14 +806,6 @@ ${row}.${r.selected} .${r.title} {
             }
             loadCountCache()
             countCache.dirty = false
-            // 顺带标出「未分组」组：key 为空串就是它。用属性而不是 :has()，
-            // 免得依赖选择器支持度；卸载时删干净。
-            for (const groupRow of root.querySelectorAll('.' + resolved.projectRow)) {
-              const parent = groupRow.parentElement
-              if (parent === null || parent === undefined) continue
-              if (groupRow.getAttribute('data-row-key') === 'workspace:') parent.setAttribute('data-dsh-rail-ungrouped', '')
-              else parent.removeAttribute('data-dsh-rail-ungrouped')
-            }
             for (const [row, count] of counts) {
               const key = rowIdentity(row)
               if (count > 0) {
@@ -882,11 +868,7 @@ ${row}.${r.selected} .${r.title} {
             if (rootName !== null && rowName !== null) {
               const root = document.querySelector('.' + rootName)
               if (root !== null) {
-                for (const row of root.querySelectorAll('.' + rowName)) {
-                  row.removeAttribute('data-dsh-rail-count')
-                  const parent = row.parentElement
-                  if (parent !== null && parent !== undefined) parent.removeAttribute('data-dsh-rail-ungrouped')
-                }
+                for (const row of root.querySelectorAll('.' + rowName)) row.removeAttribute('data-dsh-rail-count')
               }
             }
           }
