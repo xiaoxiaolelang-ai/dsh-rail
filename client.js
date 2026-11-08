@@ -533,6 +533,10 @@ ${row}.${r.selected} .${r.title} {
       const symbol = ready ? currencySymbol(snapshot.currency) : '¥'
       let text = '—'
       let tone = 'muted'
+      /* 宿主给了充值地址就点一下去充值；没给就退回原来的"点一下刷新"。 */
+      const topUpUrl = snapshot !== null && typeof snapshot.topUpUrl === 'string' && /^https:\/\//.test(snapshot.topUpUrl)
+        ? snapshot.topUpUrl
+        : null
       let label = t('balance.checking')
 
       if (ready) {
@@ -565,10 +569,6 @@ ${row}.${r.selected} .${r.title} {
       const spentVisible = Number.isFinite(spent) && spent >= 0.005
       const spentText = spentVisible ? '↓' + spent.toFixed(2) : null
       const spentTone = spentVisible ? 'down' : 'flat'
-      /* 宿主给了充值地址就点一下去充值；没给就退回原来的"点一下刷新"。 */
-      const topUpUrl = snapshot !== null && typeof snapshot.topUpUrl === 'string' && /^https:\/\//.test(snapshot.topUpUrl)
-        ? snapshot.topUpUrl
-        : null
       if (ready && Number.isFinite(spent)) {
         label = label + '\n' + t('balance.today') + ' ' + spent.toFixed(2)
         if (Number.isFinite(gained) && gained >= 0.005) {
