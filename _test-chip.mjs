@@ -128,21 +128,26 @@ const withTotal = new Map([[0, {
   topUpUrl: 'https://platform.deepseek.com/top_up',
 }]])
 const totalTree = render(withTotal)
-const flat = []
+const nodes = []
 const walk = (node) => {
   if (node === null || node === undefined) return
-  if (typeof node === 'string') { flat.push({ text: node }); return }
-  const props = node.props ?? {}
-  const kids = Array.isArray(node.children) ? node.children : []
-  if (kids.length === 1 && typeof kids[0] === 'string') flat.push({ text: kids[0], props })
-  for (const child of kids) walk(child)
+  if (typeof node === 'string') return
+  nodes.push(node)
+  for (const child of Array.isArray(node.children) ? node.children : []) walk(child)
 }
 walk(totalTree)
-const totalSpan = flat.find((x) => x.props !== undefined && x.props['data-dsh-rail-balance-total'] === '')
-assert.ok(totalSpan !== undefined, '主行必须渲染累计那个后缀')
-assert.equal(totalSpan.text, 'Σ3.70', '累计后缀必须是 Σ 加两位小数')
-const deltaSpan = flat.find((x) => x.props !== undefined && x.props['data-dsh-rail-balance-delta'] === '')
-assert.ok(deltaSpan !== undefined && deltaSpan.text === '↓0.42', '今日后缀仍然在')
+const textOf = (node) => (Array.isArray(node.children) ? node.children.filter((c) => typeof c === 'string').join('') : '')
+const findAttr = (attr) => nodes.find((n) => n.props !== undefined && n.props[attr] === '')
+const totalSpan = findAttr('data-dsh-rail-balance-total')
+assert.ok(totalSpan !== undefined, '主行必须渲染累计那个数值')
+assert.equal(textOf(totalSpan), '3.70', '累计值只留两位小数，不带符号')
+const deltaSpan = findAttr('data-dsh-rail-balance-delta')
+assert.ok(deltaSpan !== undefined && textOf(deltaSpan) === '0.42', '今日值仍然在，且不带箭头')
+assert.ok(findAttr('data-dsh-rail-balance-sep') !== undefined, '余额与指标之间要有分隔')
+assert.ok(findAttr('data-dsh-rail-balance-metrics') !== undefined, '指标必须成组，便于右对齐与折行')
+const labels = nodes.filter((n) => n.props !== undefined && n.props['data-dsh-rail-balance-metric-label'] === '').map(textOf)
+assert.equal(labels.length, 2, '两个指标各有自己的小标签，实际 ' + labels.length)
+assert.ok(labels.join(',') === '今日,累计', '标签必须是“今日 / 累计”，实际 ' + labels.join(','))
 assert.ok(String(totalTree.props.title).includes('3.70'), '悬浮说明要给出累计金额')
 assert.ok(String(totalTree.props.title).includes('2026-11-01'), '悬浮说明要给出累计起始日')
 console.log('OK  主行：余额 · 今日 · 累计，悬浮给出累计与起始日')

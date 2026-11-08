@@ -83,6 +83,8 @@ window.__ModuleLoader__.load({
   text-align: left;
   cursor: pointer;
   font-variant-numeric: tabular-nums;
+  flex-wrap: wrap;
+  row-gap: 2px;
   transition: background-color 0.12s ease;
 }
 @media (hover: hover) {
@@ -140,17 +142,47 @@ window.__ModuleLoader__.load({
 [data-dsh-rail-balance][data-tone='muted'] [data-dsh-rail-balance-amount] {
   color: var(--dsw-alias-label-tertiary);
 }
-[data-dsh-rail-balance-delta] {
+/* 三段分层：余额（主读数）│ 竖线 │ 指标组（标签 + 数值，右对齐）。
+   指标不再用 ↓ / Σ 这类符号：标签本身说明含义，数值用等宽数字对齐。 */
+[data-dsh-rail-balance-sep] {
+  flex: none;
+  align-self: center;
+  width: 1px;
+  height: 10px;
+  margin: 0 8px;
+  background: var(--dsw-alias-border-l2, var(--dsw-alias-label-tertiary));
+  opacity: 0.5;
+}
+[data-dsh-rail-balance-metrics] {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
   margin-left: auto;
+}
+[data-dsh-rail-balance-metric] {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+  white-space: nowrap;
+}
+[data-dsh-rail-balance-metric-label] {
+  flex: none;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--dsw-alias-label-tertiary);
+}
+[data-dsh-rail-balance-delta],
+[data-dsh-rail-balance-total] {
   flex: none;
   font-size: 11px;
-  color: var(--dsw-alias-label-tertiary);
-}
-[data-dsh-rail-balance-delta][data-tone='down'] {
-  color: var(--dsw-alias-label-tertiary);
-}
-[data-dsh-rail-balance-delta][data-tone='up'] {
-  color: var(--dsw-alias-state-success-primary);
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-secondary);
 }
 @media (prefers-reduced-motion: reduce) {
   [data-dsh-rail-balance] {
@@ -569,11 +601,11 @@ ${row}.${r.selected} .${r.title} {
       const totalSpent = ready ? Number.parseFloat(String(snapshot.totalSpent ?? '')) : Number.NaN
       const totalSince = ready && typeof snapshot.totalSince === 'string' ? snapshot.totalSince : ''
       const spentVisible = Number.isFinite(spent) && spent >= 0.005
-      const spentText = spentVisible ? '↓' + spent.toFixed(2) : null
-      const spentTone = spentVisible ? 'down' : 'flat'
+      const spentText = spentVisible ? spent.toFixed(2) : null
       /* 累计 = 已完成日期的合计 + 今天，与今日同一口径（只算余额下降）。 */
       const totalVisible = Number.isFinite(totalSpent) && totalSpent >= 0.005
-      const totalText = totalVisible ? 'Σ' + totalSpent.toFixed(2) : null
+      const totalText = totalVisible ? totalSpent.toFixed(2) : null
+      const hasMetrics = spentVisible || totalVisible
       if (ready && Number.isFinite(spent)) {
         label = label + '\n' + t('balance.today') + ' ' + spent.toFixed(2)
         if (Number.isFinite(gained) && gained >= 0.005) {
@@ -617,20 +649,29 @@ ${row}.${r.selected} .${r.title} {
         h('span', { 'data-dsh-rail-balance-dot': '' }),
         h('span', { 'data-dsh-rail-balance-symbol': '' }, symbol),
         h('span', { 'data-dsh-rail-balance-amount': '' }, text),
-        spentText === null
-          ? null
-          : h(
+        hasMetrics ? h('span', { 'data-dsh-rail-balance-sep': '', 'aria-hidden': 'true' }) : null,
+        hasMetrics
+          ? h(
               'span',
-              { 'data-dsh-rail-balance-delta': '', 'data-tone': spentTone },
-              spentText,
-            ),
-        totalText === null
-          ? null
-          : h(
-              'span',
-              { 'data-dsh-rail-balance-total': '', 'data-tone': 'flat' },
-              totalText,
-            ),
+              { 'data-dsh-rail-balance-metrics': '' },
+              spentText === null
+                ? null
+                : h(
+                    'span',
+                    { 'data-dsh-rail-balance-metric': '' },
+                    h('span', { 'data-dsh-rail-balance-metric-label': '' }, t('balance.todayLabel')),
+                    h('span', { 'data-dsh-rail-balance-delta': '' }, spentText),
+                  ),
+              totalText === null
+                ? null
+                : h(
+                    'span',
+                    { 'data-dsh-rail-balance-metric': '' },
+                    h('span', { 'data-dsh-rail-balance-metric-label': '' }, t('balance.total')),
+                    h('span', { 'data-dsh-rail-balance-total': '' }, totalText),
+                  ),
+            )
+          : null,
       )
     }
 
@@ -647,6 +688,7 @@ ${row}.${r.selected} .${r.title} {
       'balance.today': '今日花费',
       'balance.toppedUpToday': '今日充值',
       'balance.total': '累计',
+      'balance.todayLabel': '今日',
       'balance.since': '自',
       'balance.grantedToday': '今日赠金',
     }
@@ -664,6 +706,7 @@ ${row}.${r.selected} .${r.title} {
       'balance.today': 'Spent today',
       'balance.toppedUpToday': 'Topped up today',
       'balance.total': 'Total',
+      'balance.todayLabel': 'Today',
       'balance.since': 'since',
       'balance.grantedToday': 'Granted today',
     }

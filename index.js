@@ -20,7 +20,7 @@ const REFRESH_PATH = '/api/dsh-rail/balance/refresh'
 const CACHE_MS = 30_000
 const API_KEY_REF = 'DEEPSEEK_API_KEY'
 const API_URL = 'https://api.deepseek.com/user/balance'
-const VERSION = '0.3.0'
+const VERSION = '0.3.1'
 
 export const inject = ['connection']
 
