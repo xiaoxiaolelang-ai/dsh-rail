@@ -168,6 +168,8 @@ function stampDaySpend(value) {
 
   if (dirty) {
     persistState({
+      // v 是状态文件格式版本：以后再加字段时按 v 做迁移，而不是清空重算。
+      v: 2,
       key: dayState.key,
       upBase: dayState.upBase,
       grBase: dayState.grBase,
