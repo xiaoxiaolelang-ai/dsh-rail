@@ -553,7 +553,7 @@ ${row}.${r.selected} .${r.title} {
         text = '—'
         label = failure
       }
-      if (ready) label = label + '\n' + t('balance.hint')
+      if (ready) label = label + '\n' + (topUpUrl === null ? t('balance.hint') : t('balance.hintTopUp'))
       /* 屏幕阅读器不需要那句“点击刷新”，换成纯数值说明。 */
       const accessible = label.split('\n')[0]
 
@@ -565,6 +565,10 @@ ${row}.${r.selected} .${r.title} {
       const spentVisible = Number.isFinite(spent) && spent >= 0.005
       const spentText = spentVisible ? '↓' + spent.toFixed(2) : null
       const spentTone = spentVisible ? 'down' : 'flat'
+      /* 宿主给了充值地址就点一下去充值；没给就退回原来的"点一下刷新"。 */
+      const topUpUrl = snapshot !== null && typeof snapshot.topUpUrl === 'string' && /^https:\/\//.test(snapshot.topUpUrl)
+        ? snapshot.topUpUrl
+        : null
       if (ready && Number.isFinite(spent)) {
         label = label + '\n' + t('balance.today') + ' ' + spent.toFixed(2)
         if (Number.isFinite(gained) && gained >= 0.005) {
@@ -584,7 +588,22 @@ ${row}.${r.selected} .${r.title} {
           'data-loading': pending && snapshot === null ? 'true' : 'false',
           title: label,
           'aria-label': accessible,
-          onClick: () => void load(true),
+          onClick: (event) => {
+            // Shift + 点击：立刻刷新（点击本身给了"去充值"，刷新只能挂在这里）
+            if (event !== undefined && event.shiftKey === true) {
+              void load(true)
+              return
+            }
+            if (topUpUrl === null) {
+              void load(true)
+              return
+            }
+            try {
+              window.open(topUpUrl, '_blank', 'noopener,noreferrer')
+            } catch {
+              void load(true)
+            }
+          },
         },
         h('span', { 'data-dsh-rail-balance-dot': '' }),
         h('span', { 'data-dsh-rail-balance-symbol': '' }, symbol),
@@ -608,6 +627,7 @@ ${row}.${r.selected} .${r.title} {
       'balance.toppedUp': '充值',
       'balance.granted': '赠金',
       'balance.hint': '点击立即刷新',
+      'balance.hintTopUp': '点击去充值（Shift + 点击立即刷新）',
       'balance.today': '今日花费',
       'balance.toppedUpToday': '今日充值',
       'balance.grantedToday': '今日赠金',
@@ -622,6 +642,7 @@ ${row}.${r.selected} .${r.title} {
       'balance.toppedUp': 'Topped up',
       'balance.granted': 'Granted',
       'balance.hint': 'Click to refresh',
+      'balance.hintTopUp': 'Click to top up (Shift+click to refresh)',
       'balance.today': 'Spent today',
       'balance.toppedUpToday': 'Topped up today',
       'balance.grantedToday': 'Granted today',

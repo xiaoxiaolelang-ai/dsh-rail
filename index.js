@@ -20,7 +20,7 @@ const REFRESH_PATH = '/api/dsh-rail/balance/refresh'
 const CACHE_MS = 30_000
 const API_KEY_REF = 'DEEPSEEK_API_KEY'
 const API_URL = 'https://api.deepseek.com/user/balance'
-const VERSION = '0.2.1'
+const VERSION = '0.2.2'
 
 export const inject = ['connection']
 
@@ -187,6 +187,9 @@ function stampDaySpend(value) {
   value.grantedToday = dayState.grSum.toFixed(2)
 }
 /** 缓存与并发去重都挂在模块作用域：一个 profile 只有一份插件实例。 */
+/** 宿主账号状态里的充值地址（DeepSeek 平台），拿到一次就记住。 */
+let knownTopUpUrl = null
+
 let cachedValue = null
 let cachedAt = 0
 let inflight = null
@@ -234,6 +237,9 @@ async function fromAccount(ctx) {
     return { state: 'error', message: describe(error) }
   }
   if (view === null || view === undefined) return { state: 'unavailable' }
+  // 充值地址和登录状态无关：未登录时也给出去，前端才好显示"去充值"。
+  const link = view.links === undefined || view.links === null ? undefined : view.links.topUpUrl
+  if (typeof link === 'string' && /^https:\/\//.test(link)) knownTopUpUrl = link
   if (view.status !== 'credential-stored') return { state: 'signed-out' }
 
   const result = await account.getBalance(clientMetadata())
@@ -331,6 +337,7 @@ async function snapshot(ctx, force) {
           cachedValue = value
           cachedAt = Date.now()
         }
+        if (knownTopUpUrl !== null) value.topUpUrl = knownTopUpUrl
         return value
       })
       .finally(() => {

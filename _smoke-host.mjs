@@ -94,7 +94,10 @@ const applySpend = (ctx) => spendMod.apply(ctx)
 let liveTotal = '14.00'
 let liveBonus = '0.00'
 const mutable = {
-  getState: async () => ({ status: 'credential-stored' }),
+  getState: async () => ({
+    status: 'credential-stored',
+    links: { usageUrl: 'https://platform.deepseek.com/usage', topUpUrl: 'https://platform.deepseek.com/top_up' },
+  }),
   getBalance: async () => ({
     status: 'ready',
     value: [{ currency: 'CNY', balance: liveTotal }],
@@ -109,6 +112,8 @@ async function readOnce() {
 }
 const r1 = await readOnce()
 assert.equal(r1.spentToday, '0.00', 'first reading sets the baseline, nothing spent yet')
+assert.equal(r1.topUpUrl, 'https://platform.deepseek.com/top_up', 'the host top-up url must reach the client')
+console.log('OK   充值地址透传:', r1.topUpUrl)
 liveTotal = '12.50'
 const r2 = await readOnce()
 assert.equal(r2.spentToday, '1.50', 'a drop accumulates into today\'s spend')
