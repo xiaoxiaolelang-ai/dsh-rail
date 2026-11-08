@@ -148,22 +148,25 @@ console.log('OK   分钱包累计: 消费', r1.spentToday, '->', r2.spentToday, 
   console.log('OK   跨进程读回落盘基准: 20.00 - 18.00 = ' + out.trim())
 }
 
-// --- 6. 账本优先：今天的花费直接取自 usage-ledger.json ---
+// --- 6. 账本路径已移除：即使放一份 usage-ledger.json，也不再被读取 ---
 {
-  const { stampDaySpend } = await import('file://' + path.join(here, 'index.js').replace(/\\\\/g, '/'))
+  const { stampDaySpend } = await import('file://' + path.join(here, 'index.js').replace(/\\/g, '/'))
   const now = new Date()
-  const pad = (v) => String(v).padStart(2, ' 0'.trim())
+  const pad = (v) => String(v).padStart(2, '0')
   const key = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate())
   mkdirSync(pathMod.join(TEST_HOME, 'dsh-usage'), { recursive: true })
   writeFileSync(pathMod.join(TEST_HOME, 'dsh-usage', 'usage-ledger.json'), JSON.stringify({
     version: 1,
-    days: { [key]: { 'deepseek-official': { 'deepseek-flash': { cost: 1.25 }, 'deepseek-pro': { cost: 0.5 } } } },
+    days: { [key]: { 'deepseek-official': { 'deepseek-flash': { cost: 1.25 } } } },
   }))
   const value = { total: '10.00', toppedUp: '10.00', granted: '0.00' }
   stampDaySpend(value)
-  assert.equal(value.spentSource, 'ledger', 'ledger should win over the balance delta')
-  assert.equal(value.spentToday, '1.75', 'ledger costs are summed across providers and models')
-  console.log('OK   账本优先: 今日花费 = ' + value.spentToday)
+  assert.equal(value.spentSource, undefined, '账本字段已移除，不应再出现')
+  assert.notEqual(value.spentToday, '1.25', '账本里的 1.25 不得再被采用')
+  assert.ok(Number.isFinite(Number(value.spentToday)), '今日必须仍是数字')
+  assert.ok(Number.isFinite(Number(value.totalSpent)), '累计必须仍是数字')
+  assert.equal(typeof value.totalSince, 'string', '必须带累计起始日')
+  console.log('OK   账本不再参与: 今日 ' + value.spentToday + ' / 累计 ' + value.totalSpent)
 }
 
 console.log('host smoke done')
