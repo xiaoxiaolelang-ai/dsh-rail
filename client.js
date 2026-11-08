@@ -566,9 +566,14 @@ ${row}.${r.selected} .${r.title} {
       const spent = ready ? Number.parseFloat(String(snapshot.spentToday ?? '')) : Number.NaN
       const gained = ready ? Number.parseFloat(String(snapshot.toppedUpToday ?? '')) : Number.NaN
       const grantedToday = ready ? Number.parseFloat(String(snapshot.grantedToday ?? '')) : Number.NaN
+      const totalSpent = ready ? Number.parseFloat(String(snapshot.totalSpent ?? '')) : Number.NaN
+      const totalSince = ready && typeof snapshot.totalSince === 'string' ? snapshot.totalSince : ''
       const spentVisible = Number.isFinite(spent) && spent >= 0.005
       const spentText = spentVisible ? '↓' + spent.toFixed(2) : null
       const spentTone = spentVisible ? 'down' : 'flat'
+      /* 累计 = 已完成日期的合计 + 今天，与今日同一口径（只算余额下降）。 */
+      const totalVisible = Number.isFinite(totalSpent) && totalSpent >= 0.005
+      const totalText = totalVisible ? 'Σ' + totalSpent.toFixed(2) : null
       if (ready && Number.isFinite(spent)) {
         label = label + '\n' + t('balance.today') + ' ' + spent.toFixed(2)
         if (Number.isFinite(gained) && gained >= 0.005) {
@@ -576,6 +581,10 @@ ${row}.${r.selected} .${r.title} {
         }
         if (Number.isFinite(grantedToday) && grantedToday >= 0.005) {
           label = label + '\n' + t('balance.grantedToday') + ' ' + '+' + grantedToday.toFixed(2)
+        }
+        if (Number.isFinite(totalSpent)) {
+          const since = totalSince === '' ? '' : '（' + t('balance.since') + ' ' + totalSince + '）'
+          label = label + '\n' + t('balance.total') + ' ' + symbol + totalSpent.toFixed(2) + since
         }
       }
 
@@ -615,6 +624,13 @@ ${row}.${r.selected} .${r.title} {
               { 'data-dsh-rail-balance-delta': '', 'data-tone': spentTone },
               spentText,
             ),
+        totalText === null
+          ? null
+          : h(
+              'span',
+              { 'data-dsh-rail-balance-total': '', 'data-tone': 'flat' },
+              totalText,
+            ),
       )
     }
 
@@ -630,6 +646,8 @@ ${row}.${r.selected} .${r.title} {
       'balance.hintTopUp': '点击去充值（Shift + 点击立即刷新）',
       'balance.today': '今日花费',
       'balance.toppedUpToday': '今日充值',
+      'balance.total': '累计',
+      'balance.since': '自',
       'balance.grantedToday': '今日赠金',
     }
 
@@ -645,6 +663,8 @@ ${row}.${r.selected} .${r.title} {
       'balance.hintTopUp': 'Click to top up (Shift+click to refresh)',
       'balance.today': 'Spent today',
       'balance.toppedUpToday': 'Topped up today',
+      'balance.total': 'Total',
+      'balance.since': 'since',
       'balance.grantedToday': 'Granted today',
     }
 

@@ -120,6 +120,33 @@ const signedOut = render(new Map([[0, { state: 'signed-out' }]]))
 assert.ok(String(signedOut.props.title).includes('API Key'), 'signed-out branch must render the sign-in hint')
 const errored = render(new Map([[0, { state: 'error', message: '余额接口返回 502' }]]))
 assert.ok(String(errored.props.title).includes('502'), 'error branch must surface the reason')
+// 6) 主行：余额 · 今日 · 累计；悬浮说明给出累计与起始日
+const withTotal = new Map([[0, {
+  state: 'ready', total: '23.41', toppedUp: '23.00', granted: '0.41', currency: 'CNY', at: Date.now(),
+  spentToday: '0.42', toppedUpToday: '0.00', grantedToday: '0.00',
+  totalSpent: '3.70', totalSince: '2026-11-01',
+  topUpUrl: 'https://platform.deepseek.com/top_up',
+}]])
+const totalTree = render(withTotal)
+const flat = []
+const walk = (node) => {
+  if (node === null || node === undefined) return
+  if (typeof node === 'string') { flat.push({ text: node }); return }
+  const props = node.props ?? {}
+  const kids = Array.isArray(node.children) ? node.children : []
+  if (kids.length === 1 && typeof kids[0] === 'string') flat.push({ text: kids[0], props })
+  for (const child of kids) walk(child)
+}
+walk(totalTree)
+const totalSpan = flat.find((x) => x.props !== undefined && x.props['data-dsh-rail-balance-total'] === '')
+assert.ok(totalSpan !== undefined, '主行必须渲染累计那个后缀')
+assert.equal(totalSpan.text, 'Σ3.70', '累计后缀必须是 Σ 加两位小数')
+const deltaSpan = flat.find((x) => x.props !== undefined && x.props['data-dsh-rail-balance-delta'] === '')
+assert.ok(deltaSpan !== undefined && deltaSpan.text === '↓0.42', '今日后缀仍然在')
+assert.ok(String(totalTree.props.title).includes('3.70'), '悬浮说明要给出累计金额')
+assert.ok(String(totalTree.props.title).includes('2026-11-01'), '悬浮说明要给出累计起始日')
+console.log('OK  主行：余额 · 今日 · 累计，悬浮给出累计与起始日')
+
 console.log('OK  未登录 / 失败分支都能渲染')
 
 console.log('OK  初始渲染不抛错（TDZ 回归）')

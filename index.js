@@ -20,7 +20,7 @@ const REFRESH_PATH = '/api/dsh-rail/balance/refresh'
 const CACHE_MS = 30_000
 const API_KEY_REF = 'DEEPSEEK_API_KEY'
 const API_URL = 'https://api.deepseek.com/user/balance'
-const VERSION = '0.2.2'
+const VERSION = '0.3.0'
 
 export const inject = ['connection']
 
@@ -30,7 +30,18 @@ export const inject = ['connection']
  * 基准会落到 DSH_HOME/dsh-rail/day-spend.json，所以重启当天仍然是同一个基准；
  * 跨天自动换新（日期键不同就重取）。
  */
-const dayState = { key: '', upBase: null, grBase: null, spent: 0, upSum: 0, grSum: 0 }
+const dayState = {
+  key: '',
+  upBase: null,
+  grBase: null,
+  spent: 0,
+  upSum: 0,
+  grSum: 0,
+  /** 已完成日期的消费合计；展示时再叠加今天的 spent，避免同一天重复计。 */
+  totalSpent: 0,
+  /** 累计从哪一天开始记（本地日期键），用来在悬浮说明里标注口径。 */
+  since: '',
+}
 
 /** 基准落在 DSH_HOME 下的插件私有目录里：DSH 重启后"今日花费"仍然成立。 */
 function stateFile() {
@@ -49,6 +60,9 @@ function readPersisted() {
         spent: Number.isFinite(Number(saved.spent)) ? Number(saved.spent) : 0,
         upSum: Number.isFinite(Number(saved.upSum)) ? Number(saved.upSum) : 0,
         grSum: Number.isFinite(Number(saved.grSum)) ? Number(saved.grSum) : 0,
+        // v2 之前没有累计字段：把已有的当日消费当作累计起点，绝不凭空造历史。
+        totalSpent: Number.isFinite(Number(saved.totalSpent)) ? Number(saved.totalSpent) : (Number.isFinite(Number(saved.spent)) ? Number(saved.spent) : 0),
+        since: typeof saved.since === 'string' && saved.since !== '' ? saved.since : saved.key,
       }
     }
   } catch {
@@ -70,60 +84,7 @@ function localDayKey(now) {
   return now.getFullYear() + '-' + (now.getMonth() + 1) + '-' + now.getDate()
 }
 
-/** 用量账本的日期键是补零的 ISO 形式（2026-11-07），和上面那个不补零的不是一套。 */
-function ledgerDayKey(now) {
-  const pad = (value) => String(value).padStart(2, '0')
-  return now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate())
-}
 
-function ledgerFile() {
-  const home = process.env.DSH_HOME === undefined || process.env.DSH_HOME === '' ? join(homedir(), '.dsh') : process.env.DSH_HOME
-  return join(home, 'dsh-usage', 'usage-ledger.json')
-}
-
-/**
- * 今日实际花费，来自用量账本（DSH_HOME/dsh-usage/usage-ledger.json：
- * days[YYYY-MM-DD][provider][model].cost）。有账本就以账本为准——它不受
- * 进程重启影响，也不会因为"今天还没花到一分钱"而显示不出来。
- * 账本不存在或格式变了就返回 null，交给余额差值那条路兜底。
- */
-function todayCostFromLedger() {
-  try {
-    const ledger = JSON.parse(readFileSync(ledgerFile(), 'utf8'))
-    const day = ledger === null || typeof ledger !== 'object' ? undefined : ledger.days?.[ledgerDayKey(new Date())]
-    if (day === undefined || day === null || typeof day !== 'object') return null
-    let sum = 0
-    let any = false
-    for (const provider of Object.values(day)) {
-      if (provider === null || typeof provider !== 'object') continue
-      for (const model of Object.values(provider)) {
-        const cost = Number(model?.cost)
-        if (Number.isFinite(cost)) {
-          sum += cost
-          any = true
-        }
-      }
-    }
-    return any ? sum : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * 给一份 ready 结果补上"今日消费 / 今日充值 / 今日赠金"。
- *
- * 必须**分钱包**累计，不能用总余额做差：总余额 = 充值余额 + 赠金余额，
- * 两个钱包各自的变动混在一起，一次净值涨落既可能是充值、也可能是赠金到账
- * 或消耗，事后无法拆开——上一版就是因此把"充值 10 元"显示成 4.24。
- *
- * 规则（对每个钱包独立）：
- *   余额下降 → 记进 spent（今天的消费，不管是从哪个钱包扣的）；
- *   充值钱包上升 → 记进 upSum（今日充值）；
- *   赠金钱包上升 → 记进 grSum（今日赠金）；
- *   基准随每次变动前移。硬编码的 0.0001 是浮点容差。
- * 旧状态文件（没有分钱包基准）一律当作没有历史，绝不硬推数字。
- */
 function stampDaySpend(value) {
   const up = Number.parseFloat(String(value.toppedUp ?? ''))
   const gr = Number.parseFloat(String(value.granted ?? ''))
@@ -140,7 +101,12 @@ function stampDaySpend(value) {
       dayState.spent = saved.spent
       dayState.upSum = saved.upSum
       dayState.grSum = saved.grSum
+      dayState.totalSpent = saved.totalSpent
+      dayState.since = saved.since
     } else {
+      /* 换日：把上一日（如果有）的消费并入累计，再重新取基准。 */
+      dayState.totalSpent = saved === null ? 0 : saved.totalSpent + saved.spent
+      dayState.since = saved === null ? key : saved.since
       dayState.upBase = up
       dayState.grBase = gr
       dayState.spent = 0
@@ -169,22 +135,25 @@ function stampDaySpend(value) {
   if (dirty) {
     persistState({
       // v 是状态文件格式版本：以后再加字段时按 v 做迁移，而不是清空重算。
-      v: 2,
+      v: 3,
       key: dayState.key,
       upBase: dayState.upBase,
       grBase: dayState.grBase,
       spent: dayState.spent,
       upSum: dayState.upSum,
       grSum: dayState.grSum,
+      totalSpent: dayState.totalSpent,
+      since: dayState.since,
     })
   }
 
-  // 账本优先：它记的是真实花费，跨重启、跨"刚装插件"都成立。
-  const ledgerCost = todayCostFromLedger()
-  value.spentToday = ledgerCost !== null ? ledgerCost.toFixed(2) : dayState.spent.toFixed(2)
-  value.spentSource = ledgerCost !== null ? 'ledger' : 'balance'
+  /* 只按余额差值记账：账本（dsh-usage/usage-ledger.json）已经没有插件在写，
+     读它只会显示过期的数字——那段路径已经移除。 */
+  value.spentToday = dayState.spent.toFixed(2)
   value.toppedUpToday = dayState.upSum.toFixed(2)
   value.grantedToday = dayState.grSum.toFixed(2)
+  value.totalSpent = (dayState.totalSpent + dayState.spent).toFixed(2)
+  value.totalSince = dayState.since
 }
 /** 缓存与并发去重都挂在模块作用域：一个 profile 只有一份插件实例。 */
 /** 宿主账号状态里的充值地址（DeepSeek 平台），拿到一次就记住。 */
