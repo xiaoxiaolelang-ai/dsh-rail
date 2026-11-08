@@ -30,7 +30,7 @@ export const inject = ['connection']
  * 基准会落到 DSH_HOME/dsh-rail/day-spend.json，所以重启当天仍然是同一个基准；
  * 跨天自动换新（日期键不同就重取）。
  */
-const dayState = { key: '', baseline: null, spent: 0, gained: 0 }
+const dayState = { key: '', upBase: null, grBase: null, spent: 0, upSum: 0, grSum: 0 }
 
 /** 基准落在 DSH_HOME 下的插件私有目录里：DSH 重启后"今日花费"仍然成立。 */
 function stateFile() {
@@ -41,15 +41,14 @@ function stateFile() {
 function readPersisted() {
   try {
     const saved = JSON.parse(readFileSync(stateFile(), 'utf8'))
-    if (saved !== null && typeof saved === 'object' && typeof saved.key === 'string') {
-      // 兼容旧格式 {key, first}：老的"当天第一次读数"就是新格式的 baseline。
-      const baseline = Number(saved.baseline ?? saved.first)
-      if (!Number.isFinite(baseline)) return null
+    if (saved !== null && typeof saved === 'object' && typeof saved.key === 'string' && Number.isFinite(Number(saved.upBase)) && Number.isFinite(Number(saved.grBase))) {
       return {
         key: saved.key,
-        baseline,
+        upBase: Number(saved.upBase),
+        grBase: Number(saved.grBase),
         spent: Number.isFinite(Number(saved.spent)) ? Number(saved.spent) : 0,
-        gained: Number.isFinite(Number(saved.gained)) ? Number(saved.gained) : 0,
+        upSum: Number.isFinite(Number(saved.upSum)) ? Number(saved.upSum) : 0,
+        grSum: Number.isFinite(Number(saved.grSum)) ? Number(saved.grSum) : 0,
       }
     }
   } catch {
@@ -112,65 +111,79 @@ function todayCostFromLedger() {
 }
 
 /**
- * 给一份 ready 结果补上"今日消费"。
+ * 给一份 ready 结果补上"今日消费 / 今日充值 / 今日赠金"。
  *
- * 为什么不用「当天第一次读数 - 当前余额」：那样一旦充过值，差值就变成负数，
- * 显示出来不是消费而是"充值了多少"。这里改成**累计消耗**：
- *   余额下降 → 把降幅累加进 spent，并把基准移到新余额；
- *   余额上升（充值 / 赠金）→ 不动 spent，只把基准移到新余额，涨幅另外记进 gained；
- *   余额不变 → 什么都不做。
- * 这样充多少次值都不会把已经花掉的钱冲掉。精度取决于轮询间隔（60 秒），
- * 同一分钟内"先充值后消费"会被当成净涨，那点误差不值得更复杂的记账。
+ * 必须**分钱包**累计，不能用总余额做差：总余额 = 充值余额 + 赠金余额，
+ * 两个钱包各自的变动混在一起，一次净值涨落既可能是充值、也可能是赠金到账
+ * 或消耗，事后无法拆开——上一版就是因此把"充值 10 元"显示成 4.24。
+ *
+ * 规则（对每个钱包独立）：
+ *   余额下降 → 记进 spent（今天的消费，不管是从哪个钱包扣的）；
+ *   充值钱包上升 → 记进 upSum（今日充值）；
+ *   赠金钱包上升 → 记进 grSum（今日赠金）；
+ *   基准随每次变动前移。硬编码的 0.0001 是浮点容差。
+ * 旧状态文件（没有分钱包基准）一律当作没有历史，绝不硬推数字。
  */
 function stampDaySpend(value) {
-  const total = Number.parseFloat(String(value.total))
-  if (!Number.isFinite(total)) return
-  const key = localDayKey(new Date())
+  const up = Number.parseFloat(String(value.toppedUp ?? ''))
+  const gr = Number.parseFloat(String(value.granted ?? ''))
+  if (!Number.isFinite(up) || !Number.isFinite(gr)) return
 
+  const key = localDayKey(new Date())
   let dirty = false
-  if (dayState.key !== key || !Number.isFinite(dayState.baseline)) {
+  if (dayState.key !== key || !Number.isFinite(dayState.upBase) || !Number.isFinite(dayState.grBase)) {
     const saved = readPersisted()
     dayState.key = key
     if (saved !== null && saved.key === key) {
-      // 跨重启：接着上次的基准算，停机期间掉的钱也能补进今天的消费。
-      dayState.baseline = saved.baseline
+      dayState.upBase = saved.upBase
+      dayState.grBase = saved.grBase
       dayState.spent = saved.spent
-      dayState.gained = saved.gained
+      dayState.upSum = saved.upSum
+      dayState.grSum = saved.grSum
     } else {
-      dayState.baseline = total
+      dayState.upBase = up
+      dayState.grBase = gr
       dayState.spent = 0
-      dayState.gained = 0
+      dayState.upSum = 0
+      dayState.grSum = 0
     }
     dirty = true
   }
-  // 初始化之后同样要走一次差值：从盘上恢复的基准可能已经过期了。
-  const delta = dayState.baseline - total
-  if (delta > 0.0001) {
-    dayState.spent += delta
-    dayState.baseline = total
-    dirty = true
-  } else if (delta < -0.0001) {
-    // 余额涨了：充值或赠金。不冲抵已花掉的钱，只把基准抬高。
-    dayState.gained += -delta
-    dayState.baseline = total
+
+  // 初始化之后也要走一次差值：从盘上恢复的基准可能已经过期（停机期间花掉的）。
+  const upDelta = dayState.upBase - up
+  if (Math.abs(upDelta) > 0.0001) {
+    if (upDelta > 0) dayState.spent += upDelta
+    else dayState.upSum += -upDelta
+    dayState.upBase = up
     dirty = true
   }
+  const grDelta = dayState.grBase - gr
+  if (Math.abs(grDelta) > 0.0001) {
+    if (grDelta > 0) dayState.spent += grDelta
+    else dayState.grSum += -grDelta
+    dayState.grBase = gr
+    dirty = true
+  }
+
   if (dirty) {
-    persistState({ key: dayState.key, baseline: dayState.baseline, spent: dayState.spent, gained: dayState.gained })
+    persistState({
+      key: dayState.key,
+      upBase: dayState.upBase,
+      grBase: dayState.grBase,
+      spent: dayState.spent,
+      upSum: dayState.upSum,
+      grSum: dayState.grSum,
+    })
   }
 
   // 账本优先：它记的是真实花费，跨重启、跨"刚装插件"都成立。
   const ledgerCost = todayCostFromLedger()
-  if (ledgerCost !== null) {
-    value.spentToday = ledgerCost.toFixed(2)
-    value.spentSource = 'ledger'
-  } else {
-    value.spentToday = dayState.spent.toFixed(2)
-    value.spentSource = 'balance'
-  }
-  value.toppedUpToday = dayState.gained.toFixed(2)
+  value.spentToday = ledgerCost !== null ? ledgerCost.toFixed(2) : dayState.spent.toFixed(2)
+  value.spentSource = ledgerCost !== null ? 'ledger' : 'balance'
+  value.toppedUpToday = dayState.upSum.toFixed(2)
+  value.grantedToday = dayState.grSum.toFixed(2)
 }
-
 /** 缓存与并发去重都挂在模块作用域：一个 profile 只有一份插件实例。 */
 let cachedValue = null
 let cachedAt = 0

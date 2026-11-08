@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import pathMod from 'node:path'
 import path from 'node:path'
@@ -85,14 +85,24 @@ assert.equal(thirdBody.state, 'error')
 assert.ok(typeof thirdBody.message === 'string' && thirdBody.message.length > 0)
 console.log('OK   failed upstream reported as:', thirdBody.message)
 
-// --- 4. 今日净变化：当天第一次读数当基准，正数=花掉，负数=充值 ---
+// --- 4. 今日消费 / 今日充值 / 今日赠金：分钱包累计 ---
+// 前面几节已经用别的钱包拆分初始化过模块级状态，这里换一个全新的模块实例 +
+// 删掉落盘文件，保证从"干净的一天"开始测。
+rmSync(pathMod.join(TEST_HOME, 'dsh-rail', 'day-spend.json'), { force: true })
+const spendMod = await import('file://' + path.join(here, 'index.js').replace(/\\/g, '/') + '?spend=' + Date.now())
+const applySpend = (ctx) => spendMod.apply(ctx)
 let liveTotal = '14.00'
+let liveBonus = '0.00'
 const mutable = {
   getState: async () => ({ status: 'credential-stored' }),
-  getBalance: async () => ({ status: 'ready', value: [{ currency: 'CNY', balance: liveTotal }], bonusWallets: [] }),
+  getBalance: async () => ({
+    status: 'ready',
+    value: [{ currency: 'CNY', balance: liveTotal }],
+    bonusWallets: [{ currency: 'CNY', balance: liveBonus }],
+  }),
 }
 routes.clear()
-apply(makeCtx({ deepseekAccount: mutable }))
+applySpend(makeCtx({ deepseekAccount: mutable }))
 async function readOnce() {
   const res = await routes.get('/api/dsh-rail/balance/refresh').fetch(new Request('http://x', { method: 'POST' }))
   return res.json()
@@ -102,15 +112,20 @@ assert.equal(r1.spentToday, '0.00', 'first reading sets the baseline, nothing sp
 liveTotal = '12.50'
 const r2 = await readOnce()
 assert.equal(r2.spentToday, '1.50', 'a drop accumulates into today\'s spend')
-liveTotal = '20.00'
+liveTotal = '22.50'
 const r3 = await readOnce()
 assert.equal(r3.spentToday, '1.50', 'a top-up must NOT turn the spend negative')
-assert.equal(r3.toppedUpToday, '7.50', 'a top-up is recorded separately')
-liveTotal = '19.00'
+assert.equal(r3.toppedUpToday, '10.00', 'a 10 yuan top-up must show as exactly 10.00')
+liveTotal = '20.50'
 const r4 = await readOnce()
-assert.equal(r4.spentToday, '2.50', 'spending after a top-up keeps accumulating')
-assert.equal(r4.toppedUpToday, '7.50', 'topped-up total stays')
-console.log('OK   今日消费累计:', r1.spentToday, '->', r2.spentToday, '->', r3.spentToday, '(充值 +' + r3.toppedUpToday + ')', '->', r4.spentToday)
+assert.equal(r4.spentToday, '3.50', 'spending after a top-up keeps accumulating')
+assert.equal(r4.toppedUpToday, '10.00', 'topped-up total stays')
+liveBonus = '5.00'
+const r5 = await readOnce()
+assert.equal(r5.spentToday, '3.50', 'a grant must not be counted as spend')
+assert.equal(r5.grantedToday, '5.00', 'a grant is recorded separately')
+assert.equal(r5.toppedUpToday, '10.00', 'a grant must not disturb the top-up total')
+console.log('OK   分钱包累计: 消费', r1.spentToday, '->', r2.spentToday, '->', r4.spentToday, '| 充值 +' + r3.toppedUpToday, '| 赠金 +' + r5.grantedToday)
 
 // --- 5. 跨进程：基准落盘后，新进程仍能算出同一天的净变化 ---
 {
@@ -118,8 +133,8 @@ console.log('OK   今日消费累计:', r1.spentToday, '->', r2.spentToday, '->'
   mkdirSync(pathMod.join(home, 'dsh-rail'), { recursive: true })
   const now = new Date()
   const key = now.getFullYear() + '-' + (now.getMonth() + 1) + '-' + now.getDate()
-  writeFileSync(pathMod.join(home, 'dsh-rail', 'day-spend.json'), JSON.stringify({ key, first: 20 }))
-  const script = `const m = await import(${JSON.stringify('file://' + pathMod.join(here, 'index.js').replace(/\\\\/g, '/'))}); const v = { total: '18.00' }; m.stampDaySpend(v); process.stdout.write(String(v.spentToday ?? ''))`
+  writeFileSync(pathMod.join(home, 'dsh-rail', 'day-spend.json'), JSON.stringify({ key, upBase: 20, grBase: 0, spent: 0, upSum: 0, grSum: 0 }))
+  const script = `const m = await import(${JSON.stringify('file://' + pathMod.join(here, 'index.js').replace(/\\\\/g, '/'))}); const v = { total: '18.00', toppedUp: '18.00', granted: '0.00' }; m.stampDaySpend(v); process.stdout.write(String(v.spentToday ?? ''))`
   const out = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
     env: { ...process.env, DSH_HOME: home },
     encoding: 'utf8',
@@ -139,7 +154,7 @@ console.log('OK   今日消费累计:', r1.spentToday, '->', r2.spentToday, '->'
     version: 1,
     days: { [key]: { 'deepseek-official': { 'deepseek-flash': { cost: 1.25 }, 'deepseek-pro': { cost: 0.5 } } } },
   }))
-  const value = { total: '10.00' }
+  const value = { total: '10.00', toppedUp: '10.00', granted: '0.00' }
   stampDaySpend(value)
   assert.equal(value.spentSource, 'ledger', 'ledger should win over the balance delta')
   assert.equal(value.spentToday, '1.75', 'ledger costs are summed across providers and models')

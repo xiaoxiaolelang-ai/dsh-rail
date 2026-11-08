@@ -561,6 +561,7 @@ ${row}.${r.selected} .${r.title} {
          所以它不会因为充值变成负数或消失；今天还没花就不显示。 */
       const spent = ready ? Number.parseFloat(String(snapshot.spentToday ?? '')) : Number.NaN
       const gained = ready ? Number.parseFloat(String(snapshot.toppedUpToday ?? '')) : Number.NaN
+      const grantedToday = ready ? Number.parseFloat(String(snapshot.grantedToday ?? '')) : Number.NaN
       const spentVisible = Number.isFinite(spent) && spent >= 0.005
       const spentText = spentVisible ? '↓' + spent.toFixed(2) : null
       const spentTone = spentVisible ? 'down' : 'flat'
@@ -568,6 +569,9 @@ ${row}.${r.selected} .${r.title} {
         label = label + '\n' + t('balance.today') + ' ' + spent.toFixed(2)
         if (Number.isFinite(gained) && gained >= 0.005) {
           label = label + '\n' + t('balance.toppedUpToday') + ' ' + '+' + gained.toFixed(2)
+        }
+        if (Number.isFinite(grantedToday) && grantedToday >= 0.005) {
+          label = label + '\n' + t('balance.grantedToday') + ' ' + '+' + grantedToday.toFixed(2)
         }
       }
 
@@ -606,6 +610,7 @@ ${row}.${r.selected} .${r.title} {
       'balance.hint': '点击立即刷新',
       'balance.today': '今日花费',
       'balance.toppedUpToday': '今日充值',
+      'balance.grantedToday': '今日赠金',
     }
 
     const en = {
@@ -619,6 +624,7 @@ ${row}.${r.selected} .${r.title} {
       'balance.hint': 'Click to refresh',
       'balance.today': 'Spent today',
       'balance.toppedUpToday': 'Topped up today',
+      'balance.grantedToday': 'Granted today',
     }
 
     return {
