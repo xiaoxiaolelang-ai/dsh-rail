@@ -115,7 +115,7 @@ const checks = [
   ['[data-dsh-rail-balance-dot]', 'balance status dot'],
   ['.wnFoaW_projectRow[data-dsh-rail-count]::after', 'session count badge'],
   ['content: attr(data-dsh-rail-count)', 'count rendered from attribute'],
-  ["[data-dsh-rail-balance-delta][data-tone='down']", 'spend delta styled'],
+  ["[data-dsh-rail-balance-delta][data-tone='down']", 'today spend styled'],
   ['dsw-focus-ring-color', 'focus accent bar'],
   ['[data-dsh-rail-balance]', 'balance chip'],
   ['flex: 0 0 100%', 'chip takes a full row'],

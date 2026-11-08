@@ -557,14 +557,18 @@ ${row}.${r.selected} .${r.title} {
       /* 屏幕阅读器不需要那句“点击刷新”，换成纯数值说明。 */
       const accessible = label.split('\n')[0]
 
-      /* 右侧那个数字 = 今日净变化（host 用当天第一次读数当基准算的）。
-         正数表示今天花掉，负数表示今天充了值或进了赠金；看不出变化就不显示。 */
+      /* 右侧那个数字 = 今日**累计消费**（host 累计余额的每次下降，充值不冲抵）。
+         所以它不会因为充值变成负数或消失；今天还没花就不显示。 */
       const spent = ready ? Number.parseFloat(String(snapshot.spentToday ?? '')) : Number.NaN
-      const spentVisible = Number.isFinite(spent) && Math.abs(spent) >= 0.005
-      const spentText = spentVisible ? (spent > 0 ? '↓' : '↑') + Math.abs(spent).toFixed(2) : null
-      const spentTone = spentVisible ? (spent > 0 ? 'down' : 'up') : 'flat'
+      const gained = ready ? Number.parseFloat(String(snapshot.toppedUpToday ?? '')) : Number.NaN
+      const spentVisible = Number.isFinite(spent) && spent >= 0.005
+      const spentText = spentVisible ? '↓' + spent.toFixed(2) : null
+      const spentTone = spentVisible ? 'down' : 'flat'
       if (ready && Number.isFinite(spent)) {
-        label = label + '\n' + t('balance.today') + ' ' + (spent > 0 ? '-' : '+') + Math.abs(spent).toFixed(2)
+        label = label + '\n' + t('balance.today') + ' ' + spent.toFixed(2)
+        if (Number.isFinite(gained) && gained >= 0.005) {
+          label = label + '\n' + t('balance.toppedUpToday') + ' ' + '+' + gained.toFixed(2)
+        }
       }
 
       return h(
@@ -600,7 +604,8 @@ ${row}.${r.selected} .${r.title} {
       'balance.toppedUp': '充值',
       'balance.granted': '赠金',
       'balance.hint': '点击立即刷新',
-      'balance.today': '今日',
+      'balance.today': '今日花费',
+      'balance.toppedUpToday': '今日充值',
     }
 
     const en = {
@@ -612,7 +617,8 @@ ${row}.${r.selected} .${r.title} {
       'balance.toppedUp': 'Topped up',
       'balance.granted': 'Granted',
       'balance.hint': 'Click to refresh',
-      'balance.today': 'Today',
+      'balance.today': 'Spent today',
+      'balance.toppedUpToday': 'Topped up today',
     }
 
     return {

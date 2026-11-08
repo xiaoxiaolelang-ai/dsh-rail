@@ -98,14 +98,19 @@ async function readOnce() {
   return res.json()
 }
 const r1 = await readOnce()
-assert.equal(r1.spentToday, '0.00', 'first reading of the day is the baseline')
+assert.equal(r1.spentToday, '0.00', 'first reading sets the baseline, nothing spent yet')
 liveTotal = '12.50'
 const r2 = await readOnce()
-assert.equal(r2.spentToday, '1.50', 'spending is a positive delta')
+assert.equal(r2.spentToday, '1.50', 'a drop accumulates into today\'s spend')
 liveTotal = '20.00'
 const r3 = await readOnce()
-assert.equal(r3.spentToday, '-6.00', 'a top-up makes the delta negative')
-console.log('OK   今日净变化:', r1.spentToday, '->', r2.spentToday, '->', r3.spentToday)
+assert.equal(r3.spentToday, '1.50', 'a top-up must NOT turn the spend negative')
+assert.equal(r3.toppedUpToday, '7.50', 'a top-up is recorded separately')
+liveTotal = '19.00'
+const r4 = await readOnce()
+assert.equal(r4.spentToday, '2.50', 'spending after a top-up keeps accumulating')
+assert.equal(r4.toppedUpToday, '7.50', 'topped-up total stays')
+console.log('OK   今日消费累计:', r1.spentToday, '->', r2.spentToday, '->', r3.spentToday, '(充值 +' + r3.toppedUpToday + ')', '->', r4.spentToday)
 
 // --- 5. 跨进程：基准落盘后，新进程仍能算出同一天的净变化 ---
 {

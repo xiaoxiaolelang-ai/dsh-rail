@@ -20,7 +20,7 @@ const REFRESH_PATH = '/api/dsh-rail/balance/refresh'
 const CACHE_MS = 30_000
 const API_KEY_REF = 'DEEPSEEK_API_KEY'
 const API_URL = 'https://api.deepseek.com/user/balance'
-const VERSION = '0.2.0'
+const VERSION = '0.2.1'
 
 export const inject = ['connection']
 
@@ -30,7 +30,7 @@ export const inject = ['connection']
  * 基准会落到 DSH_HOME/dsh-rail/day-spend.json，所以重启当天仍然是同一个基准；
  * 跨天自动换新（日期键不同就重取）。
  */
-const dayState = { key: '', first: null }
+const dayState = { key: '', baseline: null, spent: 0, gained: 0 }
 
 /** 基准落在 DSH_HOME 下的插件私有目录里：DSH 重启后"今日花费"仍然成立。 */
 function stateFile() {
@@ -41,8 +41,16 @@ function stateFile() {
 function readPersisted() {
   try {
     const saved = JSON.parse(readFileSync(stateFile(), 'utf8'))
-    if (saved !== null && typeof saved === 'object' && typeof saved.key === 'string' && Number.isFinite(Number(saved.first))) {
-      return { key: saved.key, first: Number(saved.first) }
+    if (saved !== null && typeof saved === 'object' && typeof saved.key === 'string') {
+      // 兼容旧格式 {key, first}：老的"当天第一次读数"就是新格式的 baseline。
+      const baseline = Number(saved.baseline ?? saved.first)
+      if (!Number.isFinite(baseline)) return null
+      return {
+        key: saved.key,
+        baseline,
+        spent: Number.isFinite(Number(saved.spent)) ? Number(saved.spent) : 0,
+        gained: Number.isFinite(Number(saved.gained)) ? Number(saved.gained) : 0,
+      }
     }
   } catch {
     // 没写过、读不动、格式不对 —— 都当作"没有历史基准"
@@ -103,28 +111,64 @@ function todayCostFromLedger() {
   }
 }
 
-/** 给一份 ready 结果补上"今日净变化"。算不出来就不写这两个字段，前端自然不显示。 */
+/**
+ * 给一份 ready 结果补上"今日消费"。
+ *
+ * 为什么不用「当天第一次读数 - 当前余额」：那样一旦充过值，差值就变成负数，
+ * 显示出来不是消费而是"充值了多少"。这里改成**累计消耗**：
+ *   余额下降 → 把降幅累加进 spent，并把基准移到新余额；
+ *   余额上升（充值 / 赠金）→ 不动 spent，只把基准移到新余额，涨幅另外记进 gained；
+ *   余额不变 → 什么都不做。
+ * 这样充多少次值都不会把已经花掉的钱冲掉。精度取决于轮询间隔（60 秒），
+ * 同一分钟内"先充值后消费"会被当成净涨，那点误差不值得更复杂的记账。
+ */
 function stampDaySpend(value) {
   const total = Number.parseFloat(String(value.total))
   if (!Number.isFinite(total)) return
   const key = localDayKey(new Date())
-  if (dayState.key !== key) {
+
+  let dirty = false
+  if (dayState.key !== key || !Number.isFinite(dayState.baseline)) {
     const saved = readPersisted()
     dayState.key = key
-    dayState.first = saved !== null && saved.key === key ? saved.first : total
-    persistState({ key: dayState.key, first: dayState.first })
+    if (saved !== null && saved.key === key) {
+      // 跨重启：接着上次的基准算，停机期间掉的钱也能补进今天的消费。
+      dayState.baseline = saved.baseline
+      dayState.spent = saved.spent
+      dayState.gained = saved.gained
+    } else {
+      dayState.baseline = total
+      dayState.spent = 0
+      dayState.gained = 0
+    }
+    dirty = true
   }
+  // 初始化之后同样要走一次差值：从盘上恢复的基准可能已经过期了。
+  const delta = dayState.baseline - total
+  if (delta > 0.0001) {
+    dayState.spent += delta
+    dayState.baseline = total
+    dirty = true
+  } else if (delta < -0.0001) {
+    // 余额涨了：充值或赠金。不冲抵已花掉的钱，只把基准抬高。
+    dayState.gained += -delta
+    dayState.baseline = total
+    dirty = true
+  }
+  if (dirty) {
+    persistState({ key: dayState.key, baseline: dayState.baseline, spent: dayState.spent, gained: dayState.gained })
+  }
+
   // 账本优先：它记的是真实花费，跨重启、跨"刚装插件"都成立。
   const ledgerCost = todayCostFromLedger()
   if (ledgerCost !== null) {
     value.spentToday = ledgerCost.toFixed(2)
     value.spentSource = 'ledger'
-    return
+  } else {
+    value.spentToday = dayState.spent.toFixed(2)
+    value.spentSource = 'balance'
   }
-  if (!Number.isFinite(dayState.first)) return
-  value.dayStart = dayState.first.toFixed(2)
-  value.spentToday = (dayState.first - total).toFixed(2)
-  value.spentSource = 'balance'
+  value.toppedUpToday = dayState.gained.toFixed(2)
 }
 
 /** 缓存与并发去重都挂在模块作用域：一个 profile 只有一份插件实例。 */
