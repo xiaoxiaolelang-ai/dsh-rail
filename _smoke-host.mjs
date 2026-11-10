@@ -169,4 +169,58 @@ console.log('OK   分钱包累计: 消费', r1.spentToday, '->', r2.spentToday, 
   console.log('OK   账本不再参与: 今日 ' + value.spentToday + ' / 累计 ' + value.totalSpent)
 }
 
+// --- 7. 累计消费：v2 迁移不能重复计数，跨天要把昨日并入 ---
+{
+  const pad = (v) => String(v).padStart(2, '0')
+  const dayKey = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+  const today = new Date()
+  const todayKey = dayKey(today)
+  const yesterdayKey = dayKey(new Date(today.getTime() - 86400000))
+  const statePath = pathMod.join(TEST_HOME, 'dsh-rail', 'day-spend.json')
+  mkdirSync(pathMod.join(TEST_HOME, 'dsh-rail'), { recursive: true })
+  // 每个用例都重新 import 一次（带版本参数），拿到干净的模块内状态
+  const fresh = async (tag) => {
+    const url = 'file://' + path.join(here, 'index.js').replace(/\\\\/g, '/') + '?case=' + tag
+    return (await import(url)).stampDaySpend
+  }
+
+  writeFileSync(statePath, JSON.stringify({ v: 2, key: todayKey, upBase: 10, grBase: 0, spent: 1, upSum: 0, grSum: 0 }))
+  {
+    const stamp = await fresh('7a')
+    const value = { total: '10.00', toppedUp: '10.00', granted: '0.00' }
+    stamp(value)
+    assert.equal(value.spentToday, '1.00', 'v2 当日消费保持 1.00')
+    assert.equal(value.totalSpent, '1.00', 'v2 迁移后累计必须仍是 1.00（旧实现是 2.00）')
+    assert.equal(value.totalHasHistory, false, '迁移当天没有完整历史日期')
+    console.log('OK   v2 迁移不重复计数: 今日 ' + value.spentToday + ' / 累计 ' + value.totalSpent)
+  }
+
+  writeFileSync(statePath, JSON.stringify({
+    v: 3, key: todayKey, upBase: 10, grBase: 0, spent: 0.5, upSum: 0, grSum: 0, totalSpent: 3, since: yesterdayKey,
+  }))
+  {
+    const stamp = await fresh('7b')
+    const value = { total: '10.00', toppedUp: '10.00', granted: '0.00' }
+    stamp(value)
+    assert.equal(value.spentToday, '0.50', '今日消费保持 0.50')
+    assert.equal(value.totalSpent, '3.50', '累计 = 3.00 历史 + 0.50 今日')
+    assert.equal(value.totalHasHistory, true, '有历史日期时必须为 true')
+    assert.equal(value.totalSince, yesterdayKey, '起始日沿用历史')
+    console.log('OK   v3 累计 = 历史 + 今日: ' + value.totalSpent + '（起始 ' + value.totalSince + '）')
+  }
+
+  writeFileSync(statePath, JSON.stringify({
+    v: 3, key: yesterdayKey, upBase: 10, grBase: 0, spent: 2, upSum: 0, grSum: 0, totalSpent: 1, since: yesterdayKey,
+  }))
+  {
+    const stamp = await fresh('7c')
+    const value = { total: '10.00', toppedUp: '10.00', granted: '0.00' }
+    stamp(value)
+    assert.equal(value.spentToday, '0.00', '新的一天从 0 开始')
+    assert.equal(value.totalSpent, '3.00', '累计 = 1.00 历史 + 2.00 昨日')
+    assert.equal(value.totalHasHistory, true, '跨天后即算有历史')
+    console.log('OK   跨天合并: 累计 ' + value.totalSpent + ' / 今日 ' + value.spentToday)
+  }
+}
+
 console.log('host smoke done')

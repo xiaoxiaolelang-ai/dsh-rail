@@ -124,7 +124,7 @@ assert.ok(String(errored.props.title).includes('502'), 'error branch must surfac
 const withTotal = new Map([[0, {
   state: 'ready', total: '23.41', toppedUp: '23.00', granted: '0.41', currency: 'CNY', at: Date.now(),
   spentToday: '0.42', toppedUpToday: '0.00', grantedToday: '0.00',
-  totalSpent: '3.70', totalSince: '2026-11-01',
+  totalSpent: '3.70', totalSince: '2026-11-01', totalHasHistory: true,
   topUpUrl: 'https://platform.deepseek.com/top_up',
 }]])
 const totalTree = render(withTotal)
@@ -150,6 +150,24 @@ assert.equal(labels.length, 2, '两个指标各有自己的小标签，实际 ' 
 assert.ok(labels.join(',') === '今日,累计', '标签必须是“今日 / 累计”，实际 ' + labels.join(','))
 assert.ok(String(totalTree.props.title).includes('3.70'), '悬浮说明要给出累计金额')
 assert.ok(String(totalTree.props.title).includes('2026-11-01'), '悬浮说明要给出累计起始日')
+// 7) 没有完整历史日期时，不显示累计（否则 Σ 与今日同值，像算错）
+const noHistory = new Map([[0, {
+  state: 'ready', total: '23.41', toppedUp: '23.00', granted: '0.41', currency: 'CNY', at: Date.now(),
+  spentToday: '0.42', toppedUpToday: '0.00', grantedToday: '0.00',
+  totalSpent: '0.42', totalSince: '2026-11-10', totalHasHistory: false,
+}]])
+const noHistoryTree = render(noHistory)
+const noHistoryNodes = []
+const walkNo = (node) => {
+  if (node === null || node === undefined || typeof node === 'string') return
+  noHistoryNodes.push(node)
+  for (const child of Array.isArray(node.children) ? node.children : []) walkNo(child)
+}
+walkNo(noHistoryTree)
+assert.ok(noHistoryNodes.find((n) => n.props !== undefined && n.props['data-dsh-rail-balance-total'] === '') === undefined, '没有历史天数时不能显示累计')
+assert.ok(noHistoryNodes.find((n) => n.props !== undefined && n.props['data-dsh-rail-balance-delta'] === '') !== undefined, '今日仍要显示')
+console.log('OK  没有历史天数：只显示今日，不显示累计')
+
 console.log('OK  主行：余额 · 今日 · 累计，悬浮给出累计与起始日')
 
 console.log('OK  未登录 / 失败分支都能渲染')

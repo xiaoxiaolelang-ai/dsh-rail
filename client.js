@@ -603,7 +603,9 @@ ${row}.${r.selected} .${r.title} {
       const spentVisible = Number.isFinite(spent) && spent >= 0.005
       const spentText = spentVisible ? spent.toFixed(2) : null
       /* 累计 = 已完成日期的合计 + 今天，与今日同一口径（只算余额下降）。 */
-      const totalVisible = Number.isFinite(totalSpent) && totalSpent >= 0.005
+      /* 还没有完整的历史日期时，累计与今日完全相同，显示出来只会让人以为算错了。 */
+      const hasHistory = ready && snapshot.totalHasHistory === true
+      const totalVisible = Number.isFinite(totalSpent) && totalSpent >= 0.005 && hasHistory
       const totalText = totalVisible ? totalSpent.toFixed(2) : null
       const hasMetrics = spentVisible || totalVisible
       if (ready && Number.isFinite(spent)) {

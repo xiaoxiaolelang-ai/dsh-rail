@@ -20,7 +20,7 @@ const REFRESH_PATH = '/api/dsh-rail/balance/refresh'
 const CACHE_MS = 30_000
 const API_KEY_REF = 'DEEPSEEK_API_KEY'
 const API_URL = 'https://api.deepseek.com/user/balance'
-const VERSION = '0.3.1'
+const VERSION = '0.3.2'
 
 export const inject = ['connection']
 
@@ -60,8 +60,9 @@ function readPersisted() {
         spent: Number.isFinite(Number(saved.spent)) ? Number(saved.spent) : 0,
         upSum: Number.isFinite(Number(saved.upSum)) ? Number(saved.upSum) : 0,
         grSum: Number.isFinite(Number(saved.grSum)) ? Number(saved.grSum) : 0,
-        // v2 之前没有累计字段：把已有的当日消费当作累计起点，绝不凭空造历史。
-        totalSpent: Number.isFinite(Number(saved.totalSpent)) ? Number(saved.totalSpent) : (Number.isFinite(Number(saved.spent)) ? Number(saved.spent) : 0),
+        /* totalSpent 只存"已完成日期"的合计；今天的 spent 在展示时再加一次。
+           老文件（v2）没有这个字段 → 记为 0：把当日的值也写进来会重复计算成两倍。 */
+        totalSpent: Number.isFinite(Number(saved.totalSpent)) ? Number(saved.totalSpent) : 0,
         since: typeof saved.since === 'string' && saved.since !== '' ? saved.since : saved.key,
       }
     }
@@ -154,6 +155,8 @@ function stampDaySpend(value) {
   value.grantedToday = dayState.grSum.toFixed(2)
   value.totalSpent = (dayState.totalSpent + dayState.spent).toFixed(2)
   value.totalSince = dayState.since
+  /* 只有经历过至少一个完整日期，累计才与"今日"不同；否则客户端不必显示 Σ。 */
+  value.totalHasHistory = dayState.since !== '' && dayState.since !== dayState.key
 }
 /** 缓存与并发去重都挂在模块作用域：一个 profile 只有一份插件实例。 */
 /** 宿主账号状态里的充值地址（DeepSeek 平台），拿到一次就记住。 */
