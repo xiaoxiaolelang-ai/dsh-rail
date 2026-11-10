@@ -164,9 +164,9 @@ const walkNo = (node) => {
   for (const child of Array.isArray(node.children) ? node.children : []) walkNo(child)
 }
 walkNo(noHistoryTree)
-assert.ok(noHistoryNodes.find((n) => n.props !== undefined && n.props['data-dsh-rail-balance-total'] === '') === undefined, '没有历史天数时不能显示累计')
+assert.ok(noHistoryNodes.find((n) => n.props !== undefined && n.props['data-dsh-rail-balance-total'] === '') !== undefined, '没有历史天数时也要显示累计')
 assert.ok(noHistoryNodes.find((n) => n.props !== undefined && n.props['data-dsh-rail-balance-delta'] === '') !== undefined, '今日仍要显示')
-console.log('OK  没有历史天数：只显示今日，不显示累计')
+console.log('OK  没有历史天数：累计照样显示（与今日同值）')
 
 console.log('OK  主行：余额 · 今日 · 累计，悬浮给出累计与起始日')
 

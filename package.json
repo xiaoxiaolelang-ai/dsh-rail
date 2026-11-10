@@ -1,6 +1,6 @@
 {
   "name": "dsh-rail",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "type": "module",
   "description": "Narrow icon rail for the DeepSeek Harness sidebar, with session-title hierarchy and the DeepSeek account balance above the sidebar footer.",
   "keywords": [
