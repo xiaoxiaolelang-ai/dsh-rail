@@ -74,7 +74,8 @@ dsh plugin install dsh-rail
 
 ## 兼容与边界
 
-- 声明范围 `engines.dsh >= 0.2.2-rc.1`（在 `0.2.2-rc.1` 上验证）。
+- 声明范围 `engines.dsh >= 0.2.2-rc.1`（在 `0.2.2-rc.1` 与 `0.2.2-rc.2` 上验证）。
+- **0.2.2-rc.2 起宿主换了侧栏结构**：两列网格从侧栏根节点挪进内层 `scrollArea`，面板行外面多包了一层 `panelEntry`，选中类由 `panelActive` 改名为 `panelEntryActive`。插件在运行时探测这些类名，新宿主按新结构挂网格，旧宿主仍走原路径——两边都不用改配置。
 - 侧栏折叠成 56px 时，宿主自己会隐藏整个底部区，余额条跟着隐藏——这是原生行为，本插件不去覆盖。
 - 线条用「主文字色 + alpha」叠色，深色主题下取值更高，因为同样的 alpha 在深底上更难认。
 - **没有做工作区吸顶**：`position: sticky` 要求行与滚动容器之间没有 `overflow` 裁剪，而宿主的行容器不受本插件控制；做了会出现「有时吸、有时不吸」，比不做更糟。
@@ -83,6 +84,9 @@ dsh plugin install dsh-rail
 
 ## 更新记录
 
+- **0.3.5** —— 适配 DSH 0.2.2-rc.2：网格改挂到内层 `scrollArea`，图标列与工作区重新并排；压掉宿主为滚动条留的两行占位与 4px 槽。
+- **0.3.4** —— 适配 rc.2 新增的 `panelEntry` 包裹层与「宽行」38px 内边距；选中强调条跟随改名后的 `panelEntryActive`。
+- **0.3.3** —— 累计消费无论有无历史都常显在余额栏（`余额 │ 今日 x.xx  累计 y.xx`）。
 - **0.2.2** —— 余额条点击改为**打开平台充值页**（地址取自宿主账号状态），Shift + 点击保留「立即刷新」。
 - **0.2.1** —— 今日花费改成**累计消费**：充值不再把数字冲成负数或让它消失；充值额单独记录并在悬停里显示。
 - **0.2.0** —— 侧栏层次（组间 / 会话间分隔线、组竖线、选中条、键盘焦点条）、工作区会话数、余额状态圆点与今日净变化；修复 Key 兜底请求无超时会让余额条永久停在「读取中」。
@@ -124,6 +128,6 @@ Today's spend prefers the usage ledger at `DSH_HOME/dsh-usage/usage-ledger.json`
 
 The balance comes from the host's `deepseekAccount` service (no API key needed when signed in), falling back to `DEEPSEEK_API_KEY` with a 10 second timeout. Credentials never reach the browser; the client reads a pre-computed JSON document over an exact `connection` fetch route.
 
-Requires DSH `>= 0.2.2-rc.1`. When the sidebar collapses to its 56px rail the host hides the footer, so the balance line hides with it. Sticky workspace headers are deliberately not implemented: `position: sticky` needs no `overflow` clipping between the row and the scroll container, and the host's row container is outside this plugin's control.
+Requires DSH `>= 0.2.2-rc.1` (verified on `0.2.2-rc.1` and `0.2.2-rc.2`). DSH `0.2.2-rc.2` moved the sidebar two-column grid onto a nested `scrollArea`, wrapped every panel row in a new `panelEntry`, and renamed `panelActive` to `panelEntryActive`; the plugin detects those class names at runtime, so both structures render correctly. When the sidebar collapses to its 56px rail the host hides the footer, so the balance line hides with it. Sticky workspace headers are deliberately not implemented: `position: sticky` needs no `overflow` clipping between the row and the scroll container, and the host's row container is outside this plugin's control.
 
 MIT.
