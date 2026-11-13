@@ -230,7 +230,7 @@ ${box} > :not(${solid('panelList')}):not(${solid('regionArea')}):not(${solid('fo
 /* rc.2：scrollArea 自带 4px 滚动条槽和 8px/2px 两行占位伪元素，
    窄栏里不需要它们——窄栏本身就在最左边，滚动条槽会多出一条空列。 */
 ${box} {
-  margin: 0 !important;
+  margin-left: 0 !important;
   padding-left: 0 !important;
 }
 ${box}::before,
@@ -241,7 +241,7 @@ ${box}::after {
 ${solid('root')}${solid('collapsed')} ${box} {
   display: grid !important;
   flex-direction: row !important;
-  margin: 0 !important;
+  margin-left: 0 !important;
   padding-left: 0 !important;
 }
 `) + `
