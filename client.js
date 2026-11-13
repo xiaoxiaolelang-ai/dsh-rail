@@ -191,9 +191,11 @@ window.__ModuleLoader__.load({
 }
 `
 
-    function railCss(n, active) {
+    function railCss(n, active, extra) {
       const select = '.' + n.root
       const solid = (key) => '.' + n[key]
+      const entry = extra !== undefined && extra !== null && extra.entry !== null ? '.' + extra.entry : null
+      const wide = extra !== undefined && extra !== null && extra.wide !== null ? '.' + extra.wide : null
       return `
 ${select} {
   display: grid !important;
@@ -267,7 +269,28 @@ ${solid('footerActions')} {
 ${solid('footerActions')} [data-slot='sidebar.footer.action'] {
   display: contents !important;
 }
-` + (active === null ? '' : `
+` + (entry === null ? '' : `
+/* 0.2.2-rc.2 起面板多了一层 ${entry} 包裹行：窄栏里必须把这层也压成 40px 并居中，
+   否则图标会被 flex 或 "宽行" 状态推偏。 */
+${entry} {
+  position: relative;
+  width: 40px !important;
+  display: flex !important;
+  justify-content: center !important;
+  min-width: 0;
+}
+`) + (wide === null ? '' : `
+/* 宿主在"宽行"状态下给行留了 38px 的右侧内边距（给取消固定按钮）；
+   窄栏里没有这个按钮，留着只会把图标挤到左边。 */
+${wide} {
+  width: 40px !important;
+}
+${wide} ${solid('panelRow')} {
+  padding-right: 0 !important;
+  background: 0 0 !important;
+  border-inline-width: 0 !important;
+}
+`) + (active === null ? '' : `
 /* 当前面板：左侧 2px 圆头强调条，和选中会话同一种语言。
    这个类名单独解析：宿主哪天改了它，只是这条强调条消失，窄栏布局不受影响。 */
 .${active}::before {
@@ -741,7 +764,13 @@ ${row}.${r.selected} .${r.title} {
             const rows = resolveNames(ROWS_SHEET, ['sessionRow', 'title', 'selected'])
             // 结构层次用到的类名单独解析：解析不到就只跳过这几条规则，
             // 不能让整个侧栏皮肤跟着失效。
-            const railActive = resolveNames(SIDEBAR_SHEET, ['panelActive'])
+            /* 0.2.2-rc.2 把 panelActive 改名为 panelEntryActive，并多了一层 panelEntry。
+               两套名字都试：新宿主生效，旧宿主仍走原路径。 */
+            const railActiveNew = resolveNames(SIDEBAR_SHEET, ['panelEntryActive'])
+            const railActiveOld = resolveNames(SIDEBAR_SHEET, ['panelActive'])
+            const railEntry = resolveNames(SIDEBAR_SHEET, ['panelEntry'])
+            const railEntryWide = resolveNames(SIDEBAR_SHEET, ['panelEntryWide'])
+            const railActive = railActiveNew ?? railActiveOld
             const browserStruct = resolveNames(BROWSER_SHEET, ['groupSection', 'flatList'])
             const rowsStruct = resolveNames(ROWS_SHEET, ['projectRow', 'slot'])
             // 拖拽指示器的类名是"可选"的：有就加 :not 守卫，没有就不加守卫。
@@ -760,7 +789,14 @@ ${row}.${r.selected} .${r.title} {
               }))
             }
             if (sidebar !== null) {
-              parts.push(railCss(sidebar, railActive === null ? null : railActive.panelActive))
+              parts.push(railCss(
+                sidebar,
+                railActive === null ? null : (railActive.panelEntryActive ?? railActive.panelActive),
+                {
+                  entry: railEntry === null ? null : railEntry.panelEntry,
+                  wide: railEntryWide === null ? null : railEntryWide.panelEntryWide,
+                },
+              ))
               resolved.root = sidebar.root
               resolved.panelList = sidebar.panelList
               resolved.panelRow = sidebar.panelRow
