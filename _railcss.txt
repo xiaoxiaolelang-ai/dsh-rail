@@ -1,0 +1,148 @@
+    /**
+     * 窄栏皮肤。
+     *
+     * 0.2.2-rc.2 把「图标列 + 内容列」的网格从 `root` 挪进了内层 `scrollArea`：
+     * root 变成 flex 列，scrollArea 才是真正的 grid（panelList 落在 2/2、
+     * regionArea 落在 4/2，行高是 8px / max-content / 2px / max-content）。
+     * 网格必须挂在 scrollArea 上；挂在 root 上会被 flex 布局直接忽略——
+     * 表现就是图标竖着铺满一列、工作区掉到下面。
+     */
+    function railCss(n, active, extra) {
+      const solid = (key) => '.' + n[key]
+      const entry = extra != null && extra.entry != null ? '.' + extra.entry : null
+      const wide = extra != null && extra.wide != null ? '.' + extra.wide : null
+      const scrollArea = extra != null && extra.scrollArea != null ? '.' + extra.scrollArea : null
+      /* 网格容器：rc.2 用 scrollArea，旧宿主用 root。 */
+      const box = scrollArea ?? solid('root')
+      const rows = scrollArea === null ? 'auto auto minmax(0, 1fr) auto' : 'minmax(0, 1fr)'
+      return `
+${box} {
+  display: grid !important;
+  grid-template-columns: 40px minmax(0, 1fr) !important;
+  grid-template-rows: ${rows} !important;
+  column-gap: 4px;
+  align-content: start;
+}
+` + (scrollArea === null ? `
+${box}${solid('collapsed')} {
+  display: flex !important;
+  grid-template-columns: none;
+  grid-template-rows: none;
+}
+${box} > :not(${solid('panelList')}):not(${solid('regionArea')}):not(${solid('footArea')}) {
+  grid-column: 2;
+  min-width: 0;
+}
+` : `
+/* rc.2：scrollArea 自带 4px 滚动条槽和 8px/2px 两行占位伪元素，
+   窄栏里不需要它们——窄栏本身就在最左边，滚动条槽会多出一条空列。 */
+${box} {
+  margin: 0 !important;
+  padding-left: 0 !important;
+}
+${box}::before,
+${box}::after {
+  display: none !important;
+}
+/* 宿主在 collapsed（窄栏）状态下把 scrollArea 改成 flex 列，这里拉回网格。 */
+${solid('root')}${solid('collapsed')} ${box} {
+  display: grid !important;
+  flex-direction: row !important;
+  margin: 0 !important;
+  padding-left: 0 !important;
+}
+`) + `
+${box} > ${solid('panelList')} {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  align-self: start;
+  display: flex !important;
+  flex-direction: column;
+  gap: 4px;
+  width: 40px;
+  max-height: 100%;
+  margin: 0 !important;
+  padding: 2px 0 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+${solid('panelList')}::-webkit-scrollbar {
+  display: none;
+}
+${box} > ${solid('regionArea')} {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  min-width: 0;
+  min-height: 0;
+}
+${solid('panelRow')} {
+  position: relative;
+  justify-content: center !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  margin: 0 auto !important;
+  padding: 0 !important;
+  border-inline-width: 0 !important;
+}
+/* 只把文字从视觉上收起来：按钮的无障碍名字仍在。 */
+${solid('panelList')} ${solid('panelTitle')} {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+${solid('footArea')} {
+  grid-column: 1 / -1;
+  grid-row: 4;
+}
+${solid('footerActions')} {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+${solid('footerActions')} [data-slot='sidebar.footer.action'] {
+  display: contents !important;
+}
+` + (entry === null ? '' : `
+/* 0.2.2-rc.2 起面板多了一层 ${entry} 包裹行：窄栏里必须把这层也压成 40px 并居中，
+   否则图标会被 flex 或 "宽行" 状态推偏。 */
+${entry} {
+  position: relative;
+  width: 40px !important;
+  display: flex !important;
+  justify-content: center !important;
+  min-width: 0;
+}
+`) + (wide === null ? '' : `
+/* 宿主在「宽行」状态下给行留了 38px 的右侧内边距（给取消固定按钮）；
+   窄栏里没有这个按钮，留着只会把图标挤到左边。 */
+${wide} {
+  width: 40px !important;
+}
+${wide} ${solid('panelRow')} {
+  padding-right: 0 !important;
+  background: 0 0 !important;
+  border-inline-width: 0 !important;
+}
+`) + (active === null ? '' : `
+/* 当前面板：左侧 2px 圆头强调条，和选中会话同一种语言。
+   这个类名单独解析：宿主哪天改了它，只是这条强调条消失，窄栏布局不受影响。 */
+.${active}::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--dsw-alias-state-business-primary, var(--dsw-alias-brand-primary, #4d6bfe));
+}
+`)
+    }

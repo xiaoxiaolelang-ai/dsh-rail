@@ -19,7 +19,7 @@ const MODE = process.env.RAIL_FIXTURE === 'legacy' ? 'legacy' : 'rc2'
 
 const RC2_KEYS = [
   'root', 'collapsed', 'logoRow', 'newSession', 'panelList', 'panelRow', 'panelEntry',
-  'panelEntryActive', 'panelEntryWide', 'panelTitle', 'regionArea', 'footArea', 'footerActions',
+  'panelEntryActive', 'panelEntryWide', 'scrollArea', 'panelTitle', 'regionArea', 'footArea', 'footerActions',
 ]
 const LEGACY_KEYS = [
   'root', 'collapsed', 'logoRow', 'newSession', 'panelList', 'panelRow', 'panelActive',
@@ -112,11 +112,19 @@ if (MODE === 'rc2') {
   assert.ok(/\.wtg9ga_panelEntry \{[^}]*width: 40px !important/s.test(css), 'panelEntry 必须压到 40px')
   assert.ok(/\.wtg9ga_panelEntry \{[^}]*justify-content: center !important/s.test(css), 'panelEntry 必须居中')
   assert.ok(/\.wtg9ga_panelEntryWide \.wtg9ga_panelRow \{[^}]*padding-right: 0 !important/s.test(css), '宽行的 38px 内边距必须清零')
-  assert.ok(css.includes('.wtg9ga_panelEntryActive::before'), '强调条要挂在 panelEntryActive 上')
+  assert.ok(/\.wtg9ga_scrollArea \{[^}]*grid-template-columns: 40px minmax\(0, 1fr\) !important/s.test(css), "网格必须挂在 scrollArea 上")
+  assert.ok(/\.wtg9ga_scrollArea > \.wtg9ga_panelList \{[^}]*grid-column: 1/s.test(css), "图标列进 scrollArea 第一列")
+  assert.ok(/\.wtg9ga_scrollArea > \.wtg9ga_regionArea \{[^}]*grid-column: 2/s.test(css), "工作区进 scrollArea 第二列")
+  assert.ok(css.includes(".wtg9ga_scrollArea::before"), "要压掉宿主的两行占位伪元素")
+  assert.ok(css.includes(".wtg9ga_root.wtg9ga_collapsed .wtg9ga_scrollArea"), "collapsed 状态必须拉回网格")
+  assert.ok(!/^\.wtg9ga_root \{\n  display: grid/s.test(css.trim()), "rc.2 下 root 不该再被改成网格")
+  assert.ok(css.includes(".wtg9ga_panelEntryActive::before"), "强调条要挂在 panelEntryActive 上")
   assert.ok(!css.includes('panelActive::before'), 'rc.2 下不该再产出旧类名规则')
   assert.ok(!css.includes('undefined'), '产出里不能有 undefined')
-  console.log('OK  rc.2：panelEntry 压窄居中 + 宽行内边距清零 + 强调条挂 panelEntryActive')
+  console.log('OK  rc.2：网格挂 scrollArea + 图标列/工作区两列 + collapsed 拉回网格 + 强调条挂 panelEntryActive')
 } else {
+  assert.ok(/\.wtg9ga_root \{[^}]*grid-template-columns: 40px minmax\(0, 1fr\)/s.test(css), '旧宿主仍把网格挂在 root')
+  assert.ok(css.includes('.wtg9ga_root.wtg9ga_collapsed'), '旧宿主的 collapsed 例外仍在')
   assert.ok(css.includes('.wtg9ga_panelActive::before'), '旧宿主的强调条必须保留')
   assert.ok(!css.includes('panelEntry'), '旧宿主不该出现 panelEntry 规则')
   assert.ok(!css.includes('undefined'), '产出里不能有 undefined')

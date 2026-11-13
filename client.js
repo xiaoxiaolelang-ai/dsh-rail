@@ -191,30 +191,63 @@ window.__ModuleLoader__.load({
 }
 `
 
+    /**
+     * 窄栏皮肤。
+     *
+     * 0.2.2-rc.2 把「图标列 + 内容列」的网格从 `root` 挪进了内层 `scrollArea`：
+     * root 变成 flex 列，scrollArea 才是真正的 grid（panelList 落在 2/2、
+     * regionArea 落在 4/2，行高是 8px / max-content / 2px / max-content）。
+     * 网格必须挂在 scrollArea 上；挂在 root 上会被 flex 布局直接忽略——
+     * 表现就是图标竖着铺满一列、工作区掉到下面。
+     */
     function railCss(n, active, extra) {
-      const select = '.' + n.root
       const solid = (key) => '.' + n[key]
-      const entry = extra !== undefined && extra !== null && extra.entry !== null ? '.' + extra.entry : null
-      const wide = extra !== undefined && extra !== null && extra.wide !== null ? '.' + extra.wide : null
+      const entry = extra != null && extra.entry != null ? '.' + extra.entry : null
+      const wide = extra != null && extra.wide != null ? '.' + extra.wide : null
+      const scrollArea = extra != null && extra.scrollArea != null ? '.' + extra.scrollArea : null
+      /* 网格容器：rc.2 用 scrollArea，旧宿主用 root。 */
+      const box = scrollArea ?? solid('root')
+      const rows = scrollArea === null ? 'auto auto minmax(0, 1fr) auto' : 'minmax(0, 1fr)'
       return `
-${select} {
+${box} {
   display: grid !important;
-  grid-template-columns: 40px minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) !important;
+  grid-template-rows: ${rows} !important;
   column-gap: 4px;
+  align-content: start;
 }
-${select}${solid('collapsed')} {
+` + (scrollArea === null ? `
+${box}${solid('collapsed')} {
   display: flex !important;
   grid-template-columns: none;
   grid-template-rows: none;
 }
-${select} > :not(${solid('panelList')}):not(${solid('regionArea')}):not(${solid('footArea')}) {
+${box} > :not(${solid('panelList')}):not(${solid('regionArea')}):not(${solid('footArea')}) {
   grid-column: 2;
   min-width: 0;
 }
-${solid('panelList')} {
+` : `
+/* rc.2：scrollArea 自带 4px 滚动条槽和 8px/2px 两行占位伪元素，
+   窄栏里不需要它们——窄栏本身就在最左边，滚动条槽会多出一条空列。 */
+${box} {
+  margin: 0 !important;
+  padding-left: 0 !important;
+}
+${box}::before,
+${box}::after {
+  display: none !important;
+}
+/* 宿主在 collapsed（窄栏）状态下把 scrollArea 改成 flex 列，这里拉回网格。 */
+${solid('root')}${solid('collapsed')} ${box} {
+  display: grid !important;
+  flex-direction: row !important;
+  margin: 0 !important;
+  padding-left: 0 !important;
+}
+`) + `
+${box} > ${solid('panelList')} {
   grid-column: 1;
-  grid-row: 1 / 4;
+  grid-row: 1 / -1;
   align-self: start;
   display: flex !important;
   flex-direction: column;
@@ -229,6 +262,12 @@ ${solid('panelList')} {
 }
 ${solid('panelList')}::-webkit-scrollbar {
   display: none;
+}
+${box} > ${solid('regionArea')} {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  min-width: 0;
+  min-height: 0;
 }
 ${solid('panelRow')} {
   position: relative;
@@ -250,11 +289,6 @@ ${solid('panelList')} ${solid('panelTitle')} {
   overflow: hidden !important;
   clip-path: inset(50%) !important;
   white-space: nowrap !important;
-}
-${solid('regionArea')} {
-  grid-column: 2;
-  grid-row: 3;
-  min-height: 0;
 }
 ${solid('footArea')} {
   grid-column: 1 / -1;
@@ -280,7 +314,7 @@ ${entry} {
   min-width: 0;
 }
 `) + (wide === null ? '' : `
-/* 宿主在"宽行"状态下给行留了 38px 的右侧内边距（给取消固定按钮）；
+/* 宿主在「宽行」状态下给行留了 38px 的右侧内边距（给取消固定按钮）；
    窄栏里没有这个按钮，留着只会把图标挤到左边。 */
 ${wide} {
   width: 40px !important;
@@ -770,6 +804,7 @@ ${row}.${r.selected} .${r.title} {
             const railActiveOld = resolveNames(SIDEBAR_SHEET, ['panelActive'])
             const railEntry = resolveNames(SIDEBAR_SHEET, ['panelEntry'])
             const railEntryWide = resolveNames(SIDEBAR_SHEET, ['panelEntryWide'])
+            const railScrollArea = resolveNames(SIDEBAR_SHEET, ['scrollArea'])
             const railActive = railActiveNew ?? railActiveOld
             const browserStruct = resolveNames(BROWSER_SHEET, ['groupSection', 'flatList'])
             const rowsStruct = resolveNames(ROWS_SHEET, ['projectRow', 'slot'])
@@ -795,6 +830,7 @@ ${row}.${r.selected} .${r.title} {
                 {
                   entry: railEntry === null ? null : railEntry.panelEntry,
                   wide: railEntryWide === null ? null : railEntryWide.panelEntryWide,
+                  scrollArea: railScrollArea === null ? null : railScrollArea.scrollArea,
                 },
               ))
               resolved.root = sidebar.root
