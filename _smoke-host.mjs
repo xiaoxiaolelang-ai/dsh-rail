@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import pathMod from 'node:path'
 import path from 'node:path'
@@ -303,6 +303,29 @@ console.log('OK   分钱包累计: 消费', r1.spentToday, '->', r2.spentToday, 
   stamp(bad)
   assert.equal(bad.drift, '-1.00', '总额比两项之和少 1.00 必须被标记出来')
   console.log('OK   漂移检测: 报告 drift ' + bad.drift)
+}
+
+// --- 12. 旧文件里的浮点尾巴：恢复时就必须归整 ---
+{
+  const statePath = pathMod.join(TEST_HOME, "dsh-rail", "day-spend.json")
+  rmSync(statePath, { force: true })
+  const d = new Date()
+  const key = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate()
+  mkdirSync(pathMod.join(TEST_HOME, "dsh-rail"), { recursive: true })
+  writeFileSync(statePath, JSON.stringify({
+    v: 3, key, upBase: 19.73, grBase: 0, spent: 2.4600000000000013,
+    upSum: 20, grSum: 0, totalSpent: 30.729999999999997, since: "2026-11-9",
+  }))
+  const url = "file://" + path.join(here, "index.js").replace(/\\\\/g, "/") + "?clean=" + Date.now()
+  const { stampDaySpend } = await import(url)
+  const value = { total: "19.73", toppedUp: "19.73", granted: "0.00", currency: "CNY" }
+  stampDaySpend(value)
+  const saved = JSON.parse(readFileSync(statePath, "utf8"))
+  assert.equal(saved.spent, 2.46, "恢复旧值后必须归整到分")
+  assert.equal(saved.totalSpent, 30.73, "累计同样要归整")
+  assert.equal(saved.v, 4, "写回时升级到 v4")
+  assert.equal(saved.currency, "CNY", "认领币种")
+  console.log("OK   旧浮点尾巴清理: spent " + saved.spent + " / 累计 " + saved.totalSpent)
 }
 
 console.log('host smoke done')

@@ -113,13 +113,13 @@ function stampDaySpend(value) {
     if (saved !== null && saved.key === key) {
       dayState.upBase = saved.upBase
       dayState.grBase = saved.grBase
-      dayState.spent = saved.spent
-      dayState.upSum = saved.upSum
-      dayState.grSum = saved.grSum
-      dayState.totalSpent = saved.totalSpent
+      dayState.spent = round2(saved.spent)
+      dayState.upSum = round2(saved.upSum)
+      dayState.grSum = round2(saved.grSum)
+      dayState.totalSpent = round2(saved.totalSpent)
       dayState.since = saved.since
       dayState.currency = saved.currency
-      dayState.grantedSpent = saved.grantedSpent
+      dayState.grantedSpent = round2(saved.grantedSpent)
       dayState.drift = saved.drift
     } else {
       /* 换日：把上一日（如果有）的消费并入累计，再重新取基准。 */
