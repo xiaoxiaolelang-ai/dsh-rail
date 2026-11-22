@@ -666,6 +666,10 @@ ${row}.${r.selected} .${r.title} {
       const hasMetrics = spentVisible || totalVisible
       if (ready && Number.isFinite(spent)) {
         label = label + '\n' + t('balance.today') + ' ' + spent.toFixed(2)
+        const grantPart = Number(snapshot.grantedSpentToday)
+        if (Number.isFinite(grantPart) && grantPart >= 0.005) {
+          label = label + ' · ' + t('balance.ofGrant') + ' ' + grantPart.toFixed(2)
+        }
         if (Number.isFinite(gained) && gained >= 0.005) {
           label = label + '\n' + t('balance.toppedUpToday') + ' ' + '+' + gained.toFixed(2)
         }
@@ -749,6 +753,8 @@ ${row}.${r.selected} .${r.title} {
       'balance.todayLabel': '今日',
       'balance.since': '自',
       'balance.grantedToday': '今日赠金',
+      'balance.ofGrant': '其中赠金',
+      'balance.drift': '与总额差',
     }
 
     const en = {
@@ -767,6 +773,8 @@ ${row}.${r.selected} .${r.title} {
       'balance.todayLabel': 'Today',
       'balance.since': 'since',
       'balance.grantedToday': 'Granted today',
+      'balance.ofGrant': 'of which granted',
+      'balance.drift': 'vs total',
     }
 
     return {

@@ -223,4 +223,86 @@ console.log('OK   分钱包累计: 消费', r1.spentToday, '->', r2.spentToday, 
   }
 }
 
+// --- 8. 金额精度：反复相减不能攒出浮点尾巴 ---
+{
+  const statePath = pathMod.join(TEST_HOME, 'dsh-rail', 'day-spend.json')
+  rmSync(statePath, { force: true })
+  const fresh = async (tag) => {
+    const url = 'file://' + path.join(here, 'index.js').replace(/\\/g, '/') + '?money=' + tag
+    return (await import(url)).stampDaySpend
+  }
+  const stamp = await fresh('8')
+  const a = { total: '10.00', toppedUp: '10.00', granted: '0.00', currency: 'CNY' }
+  stamp(a)
+  const b = { total: '9.90', toppedUp: '9.90', granted: '0.00', currency: 'CNY' }
+  stamp(b)
+  const c = { total: '9.70', toppedUp: '9.70', granted: '0.00', currency: 'CNY' }
+  stamp(c)
+  assert.equal(c.spentToday, '0.30', '0.10 + 0.20 必须正好是 0.30')
+  assert.ok(!c.spentToday.includes('999'), '不能出现浮点尾巴')
+  assert.equal(c.totalSpent, '0.30', '累计同样精确')
+  console.log('OK   精度: 0.10 + 0.20 = ' + c.spentToday)
+}
+
+// --- 9. 币种切换：差值不可比，必须重开窗口 ---
+{
+  const statePath = pathMod.join(TEST_HOME, 'dsh-rail', 'day-spend.json')
+  rmSync(statePath, { force: true })
+  const fresh = async (tag) => {
+    const url = 'file://' + path.join(here, 'index.js').replace(/\\/g, '/') + '?cur=' + tag
+    return (await import(url)).stampDaySpend
+  }
+  const stamp = await fresh('9')
+  const cny1 = { total: '20.00', toppedUp: '20.00', granted: '0.00', currency: 'CNY' }
+  stamp(cny1)
+  const cny2 = { total: '18.00', toppedUp: '18.00', granted: '0.00', currency: 'CNY' }
+  stamp(cny2)
+  assert.equal(cny2.spentToday, '2.00', 'CNY 窗口内正常累计')
+  const usd1 = { total: '5.00', toppedUp: '5.00', granted: '0.00', currency: 'USD' }
+  stamp(usd1)
+  assert.equal(usd1.spentToday, '0.00', '换币种后今日必须归零，不能把 18.00-5.00 当消费')
+  assert.equal(usd1.currency, 'USD', '对外要带出当前币种')
+  const usd2 = { total: '4.50', toppedUp: '4.50', granted: '0.00', currency: 'USD' }
+  stamp(usd2)
+  assert.equal(usd2.spentToday, '0.50', '新币种窗口内重新开始累计')
+  console.log('OK   币种切换: CNY 2.00 -> USD 重开 -> 0.50')
+}
+
+// --- 10. 赠金减少：计入消费，但单独标注构成 ---
+{
+  const statePath = pathMod.join(TEST_HOME, 'dsh-rail', 'day-spend.json')
+  rmSync(statePath, { force: true })
+  const fresh = async (tag) => {
+    const url = 'file://' + path.join(here, 'index.js').replace(/\\/g, '/') + '?grant=' + tag
+    return (await import(url)).stampDaySpend
+  }
+  const stamp = await fresh('10')
+  const g1 = { total: '15.00', toppedUp: '10.00', granted: '5.00', currency: 'CNY' }
+  stamp(g1)
+  const g2 = { total: '13.00', toppedUp: '10.00', granted: '3.00', currency: 'CNY' }
+  stamp(g2)
+  assert.equal(g2.spentToday, '2.00', '赠金减少 2.00 计入消费')
+  assert.equal(g2.grantedSpentToday, '2.00', '同时要说明其中 2.00 来自赠金')
+  assert.equal(g2.topUpToday ?? g2.toppedUpToday, '0.00', '充值额不受影响')
+  console.log('OK   赠金构成: 消费 ' + g2.spentToday + '（其中赠金 ' + g2.grantedSpentToday + '）')
+}
+
+// --- 11. 漂移检测：平台总额与两项之和对不上时要标记 ---
+{
+  const statePath = pathMod.join(TEST_HOME, 'dsh-rail', 'day-spend.json')
+  rmSync(statePath, { force: true })
+  const fresh = async (tag) => {
+    const url = 'file://' + path.join(here, 'index.js').replace(/\\/g, '/') + '?drift=' + tag
+    return (await import(url)).stampDaySpend
+  }
+  const stamp = await fresh('11')
+  const ok = { total: '15.00', toppedUp: '10.00', granted: '5.00', currency: 'CNY' }
+  stamp(ok)
+  assert.equal(ok.drift, '0.00', '两项之和等于总额时不该报漂移')
+  const bad = { total: '14.00', toppedUp: '10.00', granted: '5.00', currency: 'CNY' }
+  stamp(bad)
+  assert.equal(bad.drift, '-1.00', '总额比两项之和少 1.00 必须被标记出来')
+  console.log('OK   漂移检测: 报告 drift ' + bad.drift)
+}
+
 console.log('host smoke done')

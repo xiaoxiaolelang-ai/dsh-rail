@@ -20,7 +20,7 @@ const REFRESH_PATH = '/api/dsh-rail/balance/refresh'
 const CACHE_MS = 30_000
 const API_KEY_REF = 'DEEPSEEK_API_KEY'
 const API_URL = 'https://api.deepseek.com/user/balance'
-const VERSION = '0.3.5'
+const VERSION = '0.3.6'
 
 export const inject = ['connection']
 
@@ -30,6 +30,10 @@ export const inject = ['connection']
  * 基准会落到 DSH_HOME/dsh-rail/day-spend.json，所以重启当天仍然是同一个基准；
  * 跨天自动换新（日期键不同就重取）。
  */
+/** 金额只保留两位小数：余额差值反复相加会攒出 1.3199999999999998 这种尾数，
+ *  显示时被 toFixed 盖住，但累计会慢慢偏。所有写入都先归整到分。 */
+const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100
+
 const dayState = {
   key: '',
   upBase: null,
@@ -41,6 +45,12 @@ const dayState = {
   totalSpent: 0,
   /** 累计从哪一天开始记（本地日期键），用来在悬浮说明里标注口径。 */
   since: '',
+  /** 记账币种：币种变了，差值就不可比，必须重开窗口。 */
+  currency: '',
+  /** 今日消费里有多少来自赠金（含过期），用来解释"消费"的构成。 */
+  grantedSpent: 0,
+  /** 平台返回的总额与两项之和的差；非 0 说明口径变了或账单有第三方变动。 */
+  drift: 0,
 }
 
 /** 基准落在 DSH_HOME 下的插件私有目录里：DSH 重启后"今日花费"仍然成立。 */
@@ -64,6 +74,9 @@ function readPersisted() {
            老文件（v2）没有这个字段 → 记为 0：把当日的值也写进来会重复计算成两倍。 */
         totalSpent: Number.isFinite(Number(saved.totalSpent)) ? Number(saved.totalSpent) : 0,
         since: typeof saved.since === 'string' && saved.since !== '' ? saved.since : saved.key,
+        currency: typeof saved.currency === 'string' ? saved.currency : '',
+        grantedSpent: Number.isFinite(Number(saved.grantedSpent)) ? Number(saved.grantedSpent) : 0,
+        drift: Number.isFinite(Number(saved.drift)) ? Number(saved.drift) : 0,
       }
     }
   } catch {
@@ -91,6 +104,7 @@ function stampDaySpend(value) {
   const gr = Number.parseFloat(String(value.granted ?? ''))
   if (!Number.isFinite(up) || !Number.isFinite(gr)) return
 
+  const wallet = typeof value.currency === 'string' && value.currency !== '' ? value.currency : ''
   const key = localDayKey(new Date())
   let dirty = false
   if (dayState.key !== key || !Number.isFinite(dayState.upBase) || !Number.isFinite(dayState.grBase)) {
@@ -104,39 +118,78 @@ function stampDaySpend(value) {
       dayState.grSum = saved.grSum
       dayState.totalSpent = saved.totalSpent
       dayState.since = saved.since
+      dayState.currency = saved.currency
+      dayState.grantedSpent = saved.grantedSpent
+      dayState.drift = saved.drift
     } else {
       /* 换日：把上一日（如果有）的消费并入累计，再重新取基准。 */
-      dayState.totalSpent = saved === null ? 0 : saved.totalSpent + saved.spent
+      dayState.totalSpent = saved === null ? 0 : round2(saved.totalSpent + saved.spent)
       dayState.since = saved === null ? key : saved.since
-      dayState.upBase = up
-      dayState.grBase = gr
+      dayState.upBase = round2(up)
+      dayState.grBase = round2(gr)
       dayState.spent = 0
       dayState.upSum = 0
       dayState.grSum = 0
+      dayState.grantedSpent = 0
+      dayState.drift = 0
     }
     dirty = true
   }
 
-  // 初始化之后也要走一次差值：从盘上恢复的基准可能已经过期（停机期间花掉的）。
-  const upDelta = dayState.upBase - up
-  if (Math.abs(upDelta) > 0.0001) {
-    if (upDelta > 0) dayState.spent += upDelta
-    else dayState.upSum += -upDelta
-    dayState.upBase = up
+  /* 币种变了：CNY 与 USD 的差值不可比，继续算只会得出无意义的数字。
+     保留累计（那是历史事实），把今日与基准重开。 */
+  if (wallet !== '' && dayState.currency !== '' && wallet !== dayState.currency) {
+    dayState.currency = wallet
+    dayState.upBase = round2(up)
+    dayState.grBase = round2(gr)
+    dayState.spent = 0
+    dayState.upSum = 0
+    dayState.grSum = 0
+    dayState.grantedSpent = 0
+    dayState.drift = 0
+    dirty = true
+  } else if (wallet !== '' && dayState.currency === '') {
+    dayState.currency = wallet
     dirty = true
   }
-  const grDelta = dayState.grBase - gr
-  if (Math.abs(grDelta) > 0.0001) {
-    if (grDelta > 0) dayState.spent += grDelta
-    else dayState.grSum += -grDelta
-    dayState.grBase = gr
+
+  // 初始化之后也要走一次差值：从盘上恢复的基准可能已经过期（停机期间花掉的）。
+  const upDelta = round2(dayState.upBase - up)
+  if (Math.abs(upDelta) >= 0.01) {
+    if (upDelta > 0) dayState.spent = round2(dayState.spent + upDelta)
+    else dayState.upSum = round2(dayState.upSum + -upDelta)
+    dayState.upBase = round2(up)
     dirty = true
+  }
+  const grDelta = round2(dayState.grBase - gr)
+  if (Math.abs(grDelta) >= 0.01) {
+    if (grDelta > 0) {
+      /* 赠金减少既可能是"被消费"，也可能是"过期"。接口不区分，这里如实计入
+         消费，但同时单独记一笔，界面上说明构成，别让人以为全是真金白银。 */
+      dayState.spent = round2(dayState.spent + grDelta)
+      dayState.grantedSpent = round2(dayState.grantedSpent + grDelta)
+    } else {
+      dayState.grSum = round2(dayState.grSum + -grDelta)
+    }
+    dayState.grBase = round2(gr)
+    dirty = true
+  }
+
+  /* 平台给了 total 就顺手对一次账：正常时 total = toppedUp + granted。
+     对不上通常意味着接口口径变了（或账单被第三方改动），这时宁可标记出来。 */
+  const reportedTotal = Number.parseFloat(String(value.total ?? ''))
+  if (Number.isFinite(reportedTotal) && Number.isFinite(dayState.upBase) && Number.isFinite(dayState.grBase)) {
+    const drift = round2(reportedTotal - (dayState.upBase + dayState.grBase))
+    if (Math.abs(drift) >= 0.02 && drift !== dayState.drift) {
+      dayState.drift = drift
+      dirty = true
+    }
   }
 
   if (dirty) {
     persistState({
       // v 是状态文件格式版本：以后再加字段时按 v 做迁移，而不是清空重算。
-      v: 3,
+      v: 4,
       key: dayState.key,
       upBase: dayState.upBase,
       grBase: dayState.grBase,
@@ -145,6 +198,9 @@ function stampDaySpend(value) {
       grSum: dayState.grSum,
       totalSpent: dayState.totalSpent,
       since: dayState.since,
+      currency: dayState.currency,
+      grantedSpent: dayState.grantedSpent,
+      drift: dayState.drift,
     })
   }
 
@@ -155,6 +211,9 @@ function stampDaySpend(value) {
   value.grantedToday = dayState.grSum.toFixed(2)
   value.totalSpent = (dayState.totalSpent + dayState.spent).toFixed(2)
   value.totalSince = dayState.since
+  value.currency = dayState.currency
+  value.grantedSpentToday = dayState.grantedSpent.toFixed(2)
+  value.drift = dayState.drift.toFixed(2)
   /* 只有经历过至少一个完整日期，累计才与"今日"不同；否则客户端不必显示 Σ。 */
   value.totalHasHistory = dayState.since !== '' && dayState.since !== dayState.key
 }
